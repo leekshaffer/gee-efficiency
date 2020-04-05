@@ -93,7 +93,7 @@ Plot.Res <- function(resdf,xlab,xvar,xtitle,fileout, truth=NULL,
     abline(v=truth2, col=2, lty=1, lwd=3)
   }
   legend(x="topleft",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(6,3),col=colors, bg="white")
+         lty=c(1,3,2),lwd=rep(4,3),col=colors, bg="white")
   
   if (is.null(ylimit2)) {
     ylimit2 <- c(floor(min(c(resdf$corvar/resdf$exchvar*100,resdf$corvar/resdf$indvar*100))),101)
@@ -117,7 +117,7 @@ Plot.Res <- function(resdf,xlab,xvar,xtitle,fileout, truth=NULL,
     abline(v=truth2, col=2, lty=1, lwd=3)
   }
   legend(x="bottomleft",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(6,3),col=colors, bg="white")
+         lty=c(1,3,2),lwd=rep(4,3),col=colors, bg="white")
   dev.off()
 }
 
@@ -169,7 +169,7 @@ Plot.Res4 <- function(resdf1,resdf2,xlab1,xlab2,xvar1,xvar2,xtitle1,xtitle2,file
     abline(v=truth1b, col=2, lty=1, lwd=3)
   }
   legend(x="topright",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(6,3),col=colors,  
+         lty=c(1,3,2),lwd=rep(4,3),col=colors,  
          cex=1.5, bg="white")
   
   if (!logX2) {
@@ -206,7 +206,7 @@ Plot.Res4 <- function(resdf1,resdf2,xlab1,xlab2,xvar1,xvar2,xtitle1,xtitle2,file
     abline(v=truth2b, col=2, lty=1, lwd=3)
   }
   legend(x="topright",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(6,3),col=colors,  
+         lty=c(1,3,2),lwd=rep(4,3),col=colors,  
          cex=1.5, bg="white")
   
   if (is.null(ylimit2)) {
@@ -232,7 +232,7 @@ Plot.Res4 <- function(resdf1,resdf2,xlab1,xlab2,xvar1,xvar2,xtitle1,xtitle2,file
     abline(v=truth1b, col=2, lty=1, lwd=3)
   }
   legend(x="bottomleft",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(6,3),col=colors,  
+         lty=c(1,3,2),lwd=rep(4,3),col=colors,  
          cex=1.5, bg="white")
   
   plot(x=xvals2,y=resdf2$corvar/resdf2$indvar*100,type="l",col=colors[3],lty=2,lwd=6,
@@ -254,7 +254,7 @@ Plot.Res4 <- function(resdf1,resdf2,xlab1,xlab2,xvar1,xvar2,xtitle1,xtitle2,file
     abline(v=truth2b, col=2, lty=1, lwd=3)
   }
   legend(x="bottomleft",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(6,3),col=colors,  
+         lty=c(1,3,2),lwd=rep(4,3),col=colors,  
          cex=1.5, bg="white")
   dev.off()
 }
@@ -334,56 +334,56 @@ Plot.SS.Full <- function(resdf,xlab,xvar,title=NULL,truth=NULL,
 
 ##### Two Binary Cluster-Level Covariates #####
 
-Vars2 <- function(n00vec, n01vec, n10vec, n11vec, 
-                  pi00, pi01, pi10, pi11,
-                  rho00, rho01, rho10, rho11,
-                  n00wts=NULL, n01wts=NULL, n10wts=NULL, n11wts=NULL,
+Vars2 <- function(n00vec, n10vec, n01vec, n11vec, 
+                  pi00, pi10, pi01, pi11,
+                  rho00, rho10, rho01, rho11,
+                  n00wts=NULL, n10wts=NULL, n01wts=NULL, n11wts=NULL,
                   K.tot=NULL) {
-  ## Note: parameter of interest corresponds to second 0/1 index
-  if (is.null(n00wts) + is.null(n01wts) + is.null(n10wts) + is.null(n11wts) < 4 & is.null(n00wts) + is.null(n01wts) + is.null(n10wts) + is.null(n11wts) > 0) {
+  ## Note: parameter of interest corresponds to first 0/1 index
+  if (is.null(n00wts) + is.null(n10wts) + is.null(n01wts) + is.null(n11wts) < 4 & is.null(n00wts) + is.null(n01wts) + is.null(n10wts) + is.null(n11wts) > 0) {
     print("Error: Specify Weights for All Cluster Size Vectors or None")
   } else if (is.null(n00wts)) {
     n00wts <- rep(1,length(n00vec))
-    n01wts <- rep(1,length(n01vec))
     n10wts <- rep(1,length(n10vec))
+    n01wts <- rep(1,length(n01vec))
     n11wts <- rep(1,length(n11vec))
   }
   
   K00 <- sum(n00wts)
-  K01 <- sum(n01wts)
   K10 <- sum(n10wts)
+  K01 <- sum(n01wts)
   K11 <- sum(n11wts)
-  Kvec <- c(K00,K01,K10,K11)
+  Kvec <- c(K00,K10,K01,K11)
   Psivec <- Kvec/sum(Kvec)
   
-  meanvec <- c(sum(n00vec*n00wts)/K00,sum(n01vec*n01wts)/K01,
-               sum(n10vec*n10wts)/K10,sum(n11vec*n11wts)/K11)
-  varvec <- c(sum(n00wts*(n00vec-meanvec[1])^2)/K00,sum(n01wts*(n01vec-meanvec[2])^2)/K01,
-              sum(n10wts*(n10vec-meanvec[3])^2)/K10,sum(n11wts*(n11vec-meanvec[4])^2)/K11)
+  meanvec <- c(sum(n00vec*n00wts)/K00,sum(n10vec*n10wts)/K10,
+               sum(n01vec*n01wts)/K01,sum(n11vec*n11wts)/K11)
+  varvec <- c(sum(n00wts*(n00vec-meanvec[1])^2)/K00,sum(n10wts*(n10vec-meanvec[2])^2)/K10,
+              sum(n01wts*(n01vec-meanvec[3])^2)/K01,sum(n11wts*(n11vec-meanvec[4])^2)/K11)
   
-  vvec <- unname(unlist(c(pi00*(1-pi00),pi01*(1-pi01),pi10*(1-pi10),pi11*(1-pi11))))
+  vvec <- unname(unlist(c(pi00*(1-pi00),pi10*(1-pi10),pi01*(1-pi01),pi11*(1-pi11))))
   
-  qvec <- c(sum(n00wts*n00vec/(1+(n00vec-1)*rho00)),sum(n01wts*n01vec/(1+(n01vec-1)*rho01)),
-            sum(n10wts*n10vec/(1+(n10vec-1)*rho10)),
+  qvec <- c(sum(n00wts*n00vec/(1+(n00vec-1)*rho00)),sum(n10wts*n10vec/(1+(n10vec-1)*rho10)),
+            sum(n01wts*n01vec/(1+(n10vec-1)*rho01)),
             sum(n11wts*n11vec/(1+(n11vec-1)*rho11)))/Kvec
   Cor <- ((sum(1/(vvec[1:2]*Psivec[1:2]*qvec[1:2])))^(-1) + (sum(1/(vvec[3:4]*Psivec[3:4]*qvec[3:4])))^(-1))^(-1)
   
   bvecInd <- vvec*Psivec*meanvec
-  cvecInd <- bvecInd*(1+(((varvec/(meanvec^2))+1)*meanvec-1)*unname(unlist(c(rho00,rho01,rho10,rho11))))
+  cvecInd <- bvecInd*(1+(((varvec/(meanvec^2))+1)*meanvec-1)*unname(unlist(c(rho00,rho10,rho01,rho11))))
 
   pairs00 <- n00vec*(n00vec-1)/2
-  pairs01 <- n01vec*(n01vec-1)/2
   pairs10 <- n10vec*(n10vec-1)/2
+  pairs01 <- n01vec*(n01vec-1)/2
   pairs11 <- n11vec*(n11vec-1)/2
-  rhost <- unname(unlist((sum(n00wts*pairs00)*rho00+sum(n01wts*pairs01)*rho01+sum(n10wts*pairs10)*rho10+sum(n11wts*pairs11)*rho11)/(sum(n00wts*pairs00)+sum(n01wts*pairs01)+sum(n10wts*pairs10)+sum(n11wts*pairs11))))
+  rhost <- unname(unlist((sum(n00wts*pairs00)*rho00+sum(n10wts*pairs10)*rho10+sum(n01wts*pairs01)*rho01+sum(n11wts*pairs11)*rho11)/(sum(n00wts*pairs00)+sum(n10wts*pairs10)+sum(n01wts*pairs01)+sum(n11wts*pairs11))))
   
   bvecExch <- vvec*Psivec*c(sum(n00wts*n00vec/(1+(n00vec-1)*rhost)),
-                            sum(n01wts*n01vec/(1+(n01vec-1)*rhost)),
                             sum(n10wts*n10vec/(1+(n10vec-1)*rhost)),
+                            sum(n01wts*n01vec/(1+(n01vec-1)*rhost)),
                             sum(n11wts*n11vec/(1+(n11vec-1)*rhost)))/Kvec
   cvecExch <- vvec*Psivec*c(sum(n00wts*n00vec*(1+(n00vec-1)*rho00)/(1+(n00vec-1)*rhost)^2),
-                            sum(n01wts*n01vec*(1+(n01vec-1)*rho01)/(1+(n01vec-1)*rhost)^2),
                             sum(n10wts*n10vec*(1+(n10vec-1)*rho10)/(1+(n10vec-1)*rhost)^2),
+                            sum(n01wts*n01vec*(1+(n01vec-1)*rho01)/(1+(n01vec-1)*rhost)^2),
                             sum(n11wts*n11vec*(1+(n11vec-1)*rho11)/(1+(n11vec-1)*rhost)^2))/Kvec
   
   bcFunc <- function(b,c) {
@@ -401,30 +401,3 @@ Vars2 <- function(n00vec, n01vec, n10vec, n11vec,
               Ind = Ind/K.tot,
               Exch = Exch/K.tot))
 }
-# 
-# ##### One Binary Individual-Level Covariate, Cluster Size=2 #####
-# VarsIndiv <- function(K00,K01,K11,
-#                       pi0,pi1,
-#                       rho00,rho01,rho11) {
-#   K <- K00 + K01 + K11
-#   rhost <- sum(c(K00,K01,K11)*c(rho00,rho01,rho11))/K
-#   r0 <- pi0*(1-pi0)
-#   r1 <- pi1*(1-pi1)
-#   CorNum <- 2*K00*r0*(1-rho01^2)/(1+rho00) + 2*K11*r1*(1-rho01^2)/(1+rho11) + K01*(r0+r1-2*rho01*sqrt(r0*r1))
-#   CorDenom <- (4*K00*K11*r0*r1*(1-rho01^2))/((1+rho00)*(1+rho11)) + (2*K00*K01*r0*r1)/(1+rho00) + (2*K01*K11*r0*r1)/(1+rho11) + (K01^2*r0*r1)
-#   Ind1 <- (2*K00*r0*(1+rho00)+K01*r0)/(2*K00*r0+K01*r0)^2
-#   Ind2 <- (2*K01*sqrt(r0*r1)*rho01)/((2*K00*r0+K01*r0)*(2*K11*r1+K01*r1))
-#   Ind3 <- (2*K11*r1*(1+rho11)+K01*r1)/(2*K11*r1+K01*r1)^2
-#   Exchb1 <- 2*K00*r0 + 2*K11*r1 + K01*(r0-2*rhost*sqrt(r0*r1)+r1)/(1-rhost)
-#   Exchb2 <- 2*K11*r1 + K01*(r1-rhost*sqrt(r0*r1))/(1-rhost)
-#   Exchb3 <- 2*K11*r1 + K01*r1/(1-rhost)
-#   rhofunc1 <- 1-2*rhost*rho01+rhost^2
-#   rhofunc2 <- rho01 - 2*rhost + rhost^2*rho01
-#   Exchc1 <- 2*K00*r0*(1+rho00) + 2*K11*r1*(1+rho11) + (K01*(r0+r1)/(1-rhost)^2)*rhofunc1 + (2*K01*sqrt(r0*r1)/((1-rhost)^2))*rhofunc2
-#   Exchc2 <- 2*K11*r1*(1+rho11) + (K01*r1/(1-rhost)^2)*rhofunc1 + (K01*sqrt(r0*r1)/((1-rhost)^2))*rhofunc2
-#   Exchc3 <- 2*K11*r1*(1+rho11) + (K01*r1/(1-rhost)^2)*rhofunc1
-#   return(list(rho.star=rhost,
-#               Cor=K*CorNum/CorDenom,
-#               Ind=K*(Ind1-Ind2+Ind3),
-#               Exch=K*(Exchb2^2*Exchc1-2*Exchb1*Exchb2*Exchc2+Exchb1^2*Exchc3)/((Exchb1*Exchb3-Exchb2^2)^2)))
-# }
