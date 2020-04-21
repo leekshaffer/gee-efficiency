@@ -1,7 +1,6 @@
 
 ###### Read in Variance Calculation Functions ######
 source("Variance_Functions.R")
-expit <- function(x) exp(x)/(1+exp(x))
 
 ###### Load Required Packages ######
 require(gee)
@@ -38,7 +37,12 @@ CtrlOnly <- Lin2[Lin2$tr=="Control",]
 Trt <- Lin2[Lin2$tr %in% c("WSH","Nutrition + WSH"),]
 K.total <- length(unique(c(CtrlOnly$clusterid,Trt$clusterid)))
 
-## Fitting unadjusted GEE models within each stratum: ##
+## Overall adjusted GEE model: ##
+Full <- rbind(CtrlOnly,Trt)
+Full$arm <- ifelse(Full$tr=="Control",0,1)
+fullgee <- gee(posgi~arm+ElecBin, id=clusterid, data=Full, family=binomial, corstr="exchangeable")
+
+## Fitting unadjusted GEE models within each stratum to get parameters: ##
 Trt.gee <- gee(posgi~1, id=clusterid, data=Trt, family=binomial, corstr="exchangeable")
 CtrlOnly.gee <- gee(posgi~1, id=clusterid, data=CtrlOnly, family=binomial, corstr="exchangeable")
 Trt.E1.gee <- gee(posgi~1, id=clusterid, data=Trt, subset=ElecBin==1, family=binomial, corstr="exchangeable")
@@ -217,14 +221,15 @@ Plot.Res4 <- function(resdf1,resdf2,xlab1,xlab2,xvar1,xvar2,xtitle1,xtitle2,file
   dev.off()
 }
 
+SSmat.names <- c("SSratio.cor","SSratio.ind","SSratio.exch.rhost",
+                 "SSratio.exch.rho0","SSratio.exch.rho1")
+
 Plot.SS.Full <- function(resdf,xlab,xvar,title=NULL,truth=NULL,
                          ylimit=NULL, colors=SS.cols,
                          logX=FALSE, truthb=NULL) {
   if (is.null(ylimit)) {
-    ylimit <- c(floor(min(c(resdf$exchvar.eq/resdf$exchvar*100,resdf$exchvar.eq.rho0/resdf$exchvar*100,
-                            resdf$exchvar.eq.rho1/resdf$exchvar*100,99))),
-                ceiling(max(c(resdf$exchvar.eq/resdf$exchvar*100,resdf$exchvar.eq.rho0/resdf$indvar*100,
-                              resdf$exchvar.eq.rho1/resdf$exchvar*100,101))))
+    ylimit <- c(floor(min(c(resdf[,SSmat.names]*100,99))),
+                ceiling(max(c(resdf[,SSmat.names]*100,101))))
   }
   if (!logX) {
     xvals <- resdf[,xvar]
@@ -241,13 +246,17 @@ Plot.SS.Full <- function(resdf,xlab,xvar,title=NULL,truth=NULL,
     }
     xaxtval <- "n"
   }
-  plot(x=xvals,y=resdf$corvar/resdf$corvar*100,type="l",col=colors[1],lty=1,lwd=6,
+  plot(x=xvals,y=resdf[,SSmat.names[1]]*100,type="l",col=colors[1],lty=1,lwd=6,
        xlab=xlab, ylab="Estimated SS/Required SS (%)",
        ylim=ylimit,
        main=title, log=logval, xaxt=xaxtval)
-  lines(x=xvals,y=resdf$exchvar.eq/resdf$exchvar*100,type="l",col=colors[2],lty=2,lwd=6)
-  lines(x=xvals,y=resdf$exchvar.eq.rho0/resdf$exchvar*100,type="l",col=colors[3],lty=3,lwd=6)
-  lines(x=xvals,y=resdf$exchvar.eq.rho1/resdf$exchvar*100,type="l",col=colors[4],lty=3,lwd=6)
+  if (logX) {
+    axis(1, at=c(1/4,1/2,3/4,1,3/2,2,3,4), 
+         labels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"))
+  }
+  lines(x=xvals,y=resdf[,SSmat.names[3]]*100,type="l",col=colors[2],lty=2,lwd=6)
+  lines(x=xvals,y=resdf[,SSmat.names[4]]*100,type="l",col=colors[3],lty=3,lwd=6)
+  lines(x=xvals,y=resdf[,SSmat.names[5]]*100,type="l",col=colors[4],lty=3,lwd=6)
   if (!is.null(truth)) {
     abline(v=truth, col=2, lty=4, lwd=3)
   }
@@ -255,6 +264,12 @@ Plot.SS.Full <- function(resdf,xlab,xvar,title=NULL,truth=NULL,
     abline(v=truthb, col=2, lty=1, lwd=3)
   }
 }
+
+
+#### Sample Size Calculation Parameters ####
+alpha <- 0.05
+power <- 0.80
+
 
 
 ###### One Binary Cluster-Level Covariate ######
@@ -270,26 +285,15 @@ ResMat <- sapply(X=df.VaryRho1$rho1s,
 df.VaryRho1$corvar <- unlist(ResMat["Cor",])
 df.VaryRho1$indvar <- unlist(ResMat["Ind",])
 df.VaryRho1$exchvar <- unlist(ResMat["Exch",])
-ResMat.eq <- sapply(X=ResMat["rho.star",],
-                    FUN=function(x) Vars(n0vec=ClustSizes,n1vec=ClustSizes,
-                                         rho0=x,rho1=x,
-                                         pi0=pi.ctrlonly,pi1=pi.trt,
-                                         K.tot=K.total))
 df.VaryRho1$rho.star <- unlist(ResMat["rho.star",])
-df.VaryRho1$corvar.eq <- unlist(ResMat.eq["Cor",])
-df.VaryRho1$indvar.eq <- unlist(ResMat.eq["Ind",])
-df.VaryRho1$exchvar.eq <- unlist(ResMat.eq["Exch",])
-df.VaryRho1$exchvar.eq.rho0 <- rep(Vars(n0vec=ClustSizes,n1vec=ClustSizes,
-                                        rho0=icc.ctrlonly,rho1=icc.ctrlonly,
-                                        pi0=pi.ctrlonly,pi1=pi.trt,
-                                        K.tot=K.total)$Exch,
-                                   len)
-ResMat.eq.rho1 <- sapply(X=df.VaryRho1$rho1s,
-                         FUN=function(x) Vars(n0vec=ClustSizes,n1vec=ClustSizes,
-                                              rho0=x,rho1=x,
-                                              pi0=pi.ctrlonly,pi1=pi.trt,
-                                              K.tot=K.total))
-df.VaryRho1$exchvar.eq.rho1 <- unlist(ResMat.eq.rho1["Exch",])
+ResMat.SS <- sapply(X=df.VaryRho1$rho1s,
+                    FUN=function(x) unlist(SSest(n0vec=ClustSizes,n1vec=ClustSizes,
+                                                 rho0=icc.ctrlonly,rho1=x,
+                                                 pi0=pi.ctrlonly,pi1=pi.trt,
+                                                 n0wts=NULL,n1wts=NULL,
+                                                 sig=alpha,pwr=power)))
+rownames(ResMat.SS) <- SSmat.names 
+df.VaryRho1 <- cbind(df.VaryRho1,t(ResMat.SS))
 
 
 ### Varying pi_1 ###
@@ -303,27 +307,15 @@ ResMat <- sapply(X=df.VaryPi1$pi1s,
 df.VaryPi1$corvar <- unlist(ResMat["Cor",])
 df.VaryPi1$indvar <- unlist(ResMat["Ind",])
 df.VaryPi1$exchvar <- unlist(ResMat["Exch",])
-ResMat.eq <- sapply(X=df.VaryPi1$pi1s,
-                    FUN=function(x) Vars(n0vec=ClustSizes,n1vec=ClustSizes,
-                                         rho0=unlist(ResMat["rho.star",1]),rho1=unlist(ResMat["rho.star",1]),
-                                         pi0=pi.ctrlonly,pi1=x,
-                                         K.tot=K.total))
 df.VaryPi1$rho.star <- unlist(ResMat["rho.star",])
-df.VaryPi1$corvar.eq <- unlist(ResMat.eq["Cor",])
-df.VaryPi1$indvar.eq <- unlist(ResMat.eq["Ind",])
-df.VaryPi1$exchvar.eq <- unlist(ResMat.eq["Exch",])
-ResMat.eq.rho0 <- sapply(X=df.VaryPi1$pi1s,
-                         FUN=function(x) Vars(n0vec=ClustSizes,n1vec=ClustSizes,
-                                              rho0=icc.ctrlonly,rho1=icc.ctrlonly,
-                                              pi0=pi.ctrlonly,pi1=x,
-                                              K.tot=K.total))
-df.VaryPi1$exchvar.eq.rho0 <- unlist(ResMat.eq.rho0["Exch",])
-ResMat.eq.rho1 <- sapply(X=df.VaryPi1$pi1s,
-                         FUN=function(x) Vars(n0vec=ClustSizes,n1vec=ClustSizes,
-                                              rho0=icc.trt,rho1=icc.trt,
-                                              pi0=pi.ctrlonly,pi1=x,
-                                              K.tot=K.total))
-df.VaryPi1$exchvar.eq.rho1 <- unlist(ResMat.eq.rho1["Exch",])
+ResMat.SS <- sapply(X=df.VaryPi1$pi1s,
+                    FUN=function(x) unlist(SSest(n0vec=ClustSizes,n1vec=ClustSizes,
+                                                 rho0=icc.ctrlonly,rho1=icc.trt,
+                                                 pi0=pi.ctrlonly,pi1=x,
+                                                 n0wts=NULL,n1wts=NULL,
+                                                 sig=alpha,pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df.VaryPi1 <- cbind(df.VaryPi1,t(ResMat.SS))
 
 Plot.Res4(resdf1=df.VaryRho1, resdf2=df.VaryPi1,
           xlab1=bquote(rho["1"]/rho["0"]), xlab2=bquote(pi["1"]/pi["0"]),
@@ -331,7 +323,7 @@ Plot.Res4(resdf1=df.VaryRho1, resdf2=df.VaryPi1,
           xtitle1=bquote("Ratio of"~rho["1"]~"to"~rho["0"]), xtitle2=bquote("Ratio of"~pi["1"]~"to"~pi["0"]),
           fileout="RhoPiRatios",
           truth1=log(icc.trt/icc.ctrlonly), truth2=log(pi.trt/pi.ctrlonly),
-          ylimit1=c(0.075,0.125), ylimit2=c(90,101),
+          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
           colors=Res.cols,
           logX1=TRUE, logX2=TRUE)
 
@@ -356,30 +348,15 @@ ResMat <- apply(X=nwts, MARGIN=2,
 df.VaryCVs$corvar <- unlist(ResMat["Cor",])
 df.VaryCVs$indvar <- unlist(ResMat["Ind",])
 df.VaryCVs$exchvar <- unlist(ResMat["Exch",])
-ResMat.eq <- apply(X=nwts, MARGIN=2,
-                   FUN=function(x) unlist(Vars(n0vec=nvec,n1vec=nvec,
-                                               rho0=unlist(ResMat["rho.star",1]),rho1=unlist(ResMat["rho.star",1]),
-                                               pi0=pi.ctrlonly,pi1=pi.trt,
-                                               n0wts=x,n1wts=x,
-                                               K.tot=K.total)))
 df.VaryCVs$rho.star <- unlist(ResMat["rho.star",])
-df.VaryCVs$corvar.eq <- unlist(ResMat.eq["Cor",])
-df.VaryCVs$indvar.eq <- unlist(ResMat.eq["Ind",])
-df.VaryCVs$exchvar.eq <- unlist(ResMat.eq["Exch",])
-ResMat.eq.rho0 <- apply(X=nwts, MARGIN=2,
-                        FUN=function(x) unlist(Vars(n0vec=nvec,n1vec=nvec,
-                                                    rho0=icc.ctrlonly,rho1=icc.ctrlonly,
-                                                    pi0=pi.ctrlonly,pi1=pi.trt,
-                                                    n0wts=x,n1wts=x,
-                                                    K.tot=K.total)))
-df.VaryCVs$exchvar.eq.rho0 <- unlist(ResMat.eq.rho0["Exch",])
-ResMat.eq.rho1 <- apply(X=nwts, MARGIN=2,
-                        FUN=function(x) unlist(Vars(n0vec=nvec,n1vec=nvec,
-                                                    rho0=icc.trt,rho1=icc.trt,
-                                                    pi0=pi.ctrlonly,pi1=pi.trt,
-                                                    n0wts=x,n1wts=x,
-                                                    K.tot=K.total)))
-df.VaryCVs$exchvar.eq.rho1 <- unlist(ResMat.eq.rho1["Exch",])
+ResMat.SS <- apply(X=nwts, MARGIN=2,
+                    FUN=function(x) unlist(SSest(n0vec=nvec,n1vec=nvec,
+                                                 rho0=icc.ctrlonly,rho1=icc.trt,
+                                                 pi0=pi.ctrlonly,pi1=pi.trt,
+                                                 n0wts=x,n1wts=x,
+                                                 sig=alpha,pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df.VaryCVs <- cbind(df.VaryCVs,t(ResMat.SS))
 
 
 ### Varying Cluster Size Means ###
@@ -404,30 +381,15 @@ ResMat <- apply(X=nwts, MARGIN=2,
 df.VaryMeans$corvar <- unlist(ResMat["Cor",])
 df.VaryMeans$indvar <- unlist(ResMat["Ind",])
 df.VaryMeans$exchvar <- unlist(ResMat["Exch",])
-ResMat.eq <- apply(X=nwts, MARGIN=2,
-                   FUN=function(x) unlist(Vars(n0vec=nvec,n1vec=nvec,
-                                               rho0=unlist(ResMat["rho.star",1]),rho1=unlist(ResMat["rho.star",1]),
-                                               pi0=pi.ctrlonly,pi1=pi.trt,
-                                               n0wts=x,n1wts=x,
-                                               K.tot=K.total)))
 df.VaryMeans$rho.star <- unlist(ResMat["rho.star",])
-df.VaryMeans$corvar.eq <- unlist(ResMat.eq["Cor",])
-df.VaryMeans$indvar.eq <- unlist(ResMat.eq["Ind",])
-df.VaryMeans$exchvar.eq <- unlist(ResMat.eq["Exch",])
-ResMat.eq.rho0 <- apply(X=nwts, MARGIN=2,
-                        FUN=function(x) unlist(Vars(n0vec=nvec,n1vec=nvec,
-                                                    rho0=icc.ctrlonly,rho1=icc.ctrlonly,
-                                                    pi0=pi.ctrlonly,pi1=pi.trt,
-                                                    n0wts=x,n1wts=x,
-                                                    K.tot=K.total)))
-df.VaryMeans$exchvar.eq.rho0 <- unlist(ResMat.eq.rho0["Exch",])
-ResMat.eq.rho1 <- apply(X=nwts, MARGIN=2,
-                        FUN=function(x) unlist(Vars(n0vec=nvec,n1vec=nvec,
-                                                    rho0=icc.trt,rho1=icc.trt,
-                                                    pi0=pi.ctrlonly,pi1=pi.trt,
-                                                    n0wts=x,n1wts=x,
-                                                    K.tot=K.total)))
-df.VaryMeans$exchvar.eq.rho1 <- unlist(ResMat.eq.rho1["Exch",])
+ResMat.SS <- apply(X=nwts, MARGIN=2,
+                   FUN=function(x) unlist(SSest(n0vec=nvec,n1vec=nvec,
+                                                rho0=icc.ctrlonly,rho1=icc.trt,
+                                                pi0=pi.ctrlonly,pi1=pi.trt,
+                                                n0wts=x,n1wts=x,
+                                                sig=alpha,pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df.VaryMeans <- cbind(df.VaryMeans,t(ResMat.SS))
 
 
 Plot.Res4(resdf1=df.VaryMeans, resdf2=df.VaryCVs,
@@ -436,7 +398,7 @@ Plot.Res4(resdf1=df.VaryMeans, resdf2=df.VaryCVs,
           xtitle1="Mean Cluster Size", xtitle2="CV of Cluster Size Distribution",
           fileout="SizeDistn",
           truth1=mean(ClustSizes), truth2=sqrt(var)/(muAdj+1),
-          ylimit1=c(0.075,0.125), ylimit2=c(90,101),
+          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
           colors=Res.cols)
 
 
@@ -447,38 +409,38 @@ postscript(file=paste0("SS_Single4.eps"),
 par(mfrow=c(2,2))
 Plot.SS.Full(resdf=df.VaryRho1,bquote(rho["1"]/rho["0"]), xvar="rho.ratio",
              title=bquote("a."~"Ratio of "~rho["1"]~"to"~rho["0"]), truth=log(icc.trt/icc.ctrlonly),
-             ylimit=c(90,110), colors=SS.cols, logX=TRUE)
+             ylimit=c(80,120), colors=SS.cols, logX=TRUE)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                         expression("Common Exchangeable,"~rho[0]),
-                        expression("Common Exchangeable,"~rho[1]),
-                        expression("Common Exchangeable"~rho*"*")),
+                        expression("Common Exchangeable,"~rho*"*"),
+                        expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df.VaryPi1,bquote(pi["1"]/pi["0"]), xvar="pi.ratio",
              title=bquote("b."~"Ratio of "~pi["1"]~"to"~pi["0"]), truth=log(pi.trt/pi.ctrlonly),
-             ylimit=c(90,110), colors=SS.cols, logX=TRUE)
+             ylimit=c(80,120), colors=SS.cols, logX=TRUE)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df.VaryMeans,xlab=bquote("Mean"~"Cluster Size"), xvar="Means",
              title=bquote("c."~"Mean Cluster Size"), truth=muAdj+1,
-             ylimit=c(90,110), colors=SS.cols)
+             ylimit=c(80,120), colors=SS.cols)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df.VaryCVs,xlab=bquote("CV"~"of Cluster Size"), xvar="CVs",
              title=bquote("d."~"CV of Cluster Size"), truth=sqrt(var)/(muAdj+1),
-             ylimit=c(90,110), colors=SS.cols)
+             ylimit=c(80,120), colors=SS.cols)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 dev.off()
@@ -496,7 +458,7 @@ df2.RhoRatio$rho01s <- df2.RhoRatio$rho00s*exp(df2.RhoRatio$rho.ratio)
 df2.RhoRatio$rho11s <- df2.RhoRatio$rho10s*exp(df2.RhoRatio$rho.ratio)
 ResMat <- apply(X=df2.RhoRatio, MARGIN=1,
                  FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n01vec=ClustSizes, n10vec=ClustSizes, n11vec=ClustSizes,
-                                       pi00=pi.ctrl.E0, pi10=pi.trt.E1, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                       pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
                                        rho00=x["rho00s"], rho10=x["rho10s"], rho01=x["rho01s"], rho11=x["rho11s"],
                                        n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
                                        n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
@@ -505,34 +467,16 @@ df2.RhoRatio$corvar <- unlist(ResMat["Cor",])
 df2.RhoRatio$indvar <- unlist(ResMat["Ind",])
 df2.RhoRatio$exchvar <- unlist(ResMat["Exch",])
 df2.RhoRatio$rho.star <- unlist(ResMat["rho.star",])
-ResMat.eq <- sapply(X=df2.RhoRatio$rho.star,
-                    FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                 pi00=pi.ctrl.E0, pi10=pi.trt.E1, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                rho00=x, rho10=x, rho01=x, rho11=x,
-                                                n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                K.tot=K.total)))
-df2.RhoRatio$corvar.eq <- unlist(ResMat.eq["Cor",])
-df2.RhoRatio$indvar.eq <- unlist(ResMat.eq["Ind",])
-df2.RhoRatio$exchvar.eq <- unlist(ResMat.eq["Exch",])
-ResMat.eq.rho0 <- apply(X=df2.RhoRatio, MARGIN=1,
-                           FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                        pi00=pi.ctrl.E0, pi10=pi.trt.E1, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                        rho00=0.4*x["rho00s"]+0.6*x["rho01s"], rho10=0.4*x["rho00s"]+0.6*x["rho01s"], 
-                                                        rho01=0.4*x["rho00s"]+0.6*x["rho01s"], rho11=0.4*x["rho00s"]+0.6*x["rho01s"],
-                                                        n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                        n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                        K.tot=K.total)))
-df2.RhoRatio$exchvar.eq.rho0 <- unlist(ResMat.eq.rho0["Exch",])
-ResMat.eq.rho1 <- apply(X=df2.RhoRatio, MARGIN=1,
-                           FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                        pi00=pi.ctrl.E0, pi10=pi.trt.E1, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                        rho00=0.4*x["rho10s"]+0.6*x["rho11s"], rho10=0.4*x["rho10s"]+0.6*x["rho11s"], 
-                                                        rho01=0.4*x["rho10s"]+0.6*x["rho11s"], rho11=0.4*x["rho10s"]+0.6*x["rho11s"],
-                                                        n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                        n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                        K.tot=K.total)))
-df2.RhoRatio$exchvar.eq.rho1 <- unlist(ResMat.eq.rho1["Exch",])
+ResMat.SS <- apply(X=df2.RhoRatio, MARGIN=1,
+                FUN=function(x) unlist(SSest2(n00vec=ClustSizes,n01vec=ClustSizes, n10vec=ClustSizes, n11vec=ClustSizes,
+                                              pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                              rho00=x["rho00s"], rho10=x["rho10s"], rho01=x["rho01s"], rho11=x["rho11s"],
+                                              n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
+                                              n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
+                                              sig=alpha, pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df2.RhoRatio <- cbind(df2.RhoRatio, t(ResMat.SS))
+
 
 
 ### Varying Pi Ratio ###
@@ -552,33 +496,15 @@ df2.pi.Eratio$corvar <- unlist(ResMat["Cor",])
 df2.pi.Eratio$indvar <- unlist(ResMat["Ind",])
 df2.pi.Eratio$exchvar <- unlist(ResMat["Exch",])
 df2.pi.Eratio$rho.star <- unlist(ResMat["rho.star",])
-ResMat.eq <- apply(X=df2.pi.Eratio, MARGIN=1,
-                    FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                 pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
-                                                 rho00=df2.pi.Eratio$rho.star[1], rho10=df2.pi.Eratio$rho.star[1], rho01=df2.pi.Eratio$rho.star[1], rho11=df2.pi.Eratio$rho.star[1],
-                                                 n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                 n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                 K.tot=K.total)))
-df2.pi.Eratio$rho.star <- rep(unname(unlist(ResMat["rho.star",1])),dim(df2.pi.Eratio)[1])
-df2.pi.Eratio$corvar.eq <- unlist(ResMat.eq["Cor",])
-df2.pi.Eratio$indvar.eq <- unlist(ResMat.eq["Ind",])
-df2.pi.Eratio$exchvar.eq <- unlist(ResMat.eq["Exch",])
-ResMat.eq.rho0 <- apply(X=df2.pi.Eratio, MARGIN=1,
-                   FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
-                                                rho00=icc.ctrlonly, rho10=icc.ctrlonly, rho01=icc.ctrlonly, rho11=icc.ctrlonly,
-                                                n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                K.tot=K.total)))
-df2.pi.Eratio$exchvar.eq.rho0 <- unlist(ResMat.eq.rho0["Exch",])
-ResMat.eq.rho1 <- apply(X=df2.pi.Eratio, MARGIN=1,
-                          FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                       pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
-                                                       rho00=icc.trt, rho10=icc.trt, rho01=icc.trt, rho11=icc.trt,
-                                                       n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                       n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                       K.tot=K.total)))
-df2.pi.Eratio$exchvar.eq.rho1 <- unlist(ResMat.eq.rho1["Exch",])
+ResMat.SS <- apply(X=df2.pi.Eratio, MARGIN=1,
+                FUN=function(x) unlist(SSest2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
+                                              pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
+                                              rho00=icc.ctrl.E0, rho10=icc.trt.E0, rho01=icc.ctrl.E1, rho11=icc.trt.E1,
+                                              n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
+                                              n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
+                                              sig=alpha, pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df2.pi.Eratio <- cbind(df2.pi.Eratio, t(ResMat.SS))
 
 Plot.Res4(resdf1=df2.RhoRatio, resdf2=df2.pi.Eratio,
           xlab1=bquote(rho["01"]/rho["00"]==rho["11"]/rho["10"]), xlab2=bquote(pi["01"]/pi["00"]==pi["11"]/pi["10"]),
@@ -613,30 +539,15 @@ df2.VaryCVs$corvar <- unlist(ResMat["Cor",])
 df2.VaryCVs$indvar <- unlist(ResMat["Ind",])
 df2.VaryCVs$exchvar <- unlist(ResMat["Exch",])
 df2.VaryCVs.rho.star <- unname(unlist(ResMat["rho.star",1]))
-ResMat.eq <- apply(X=nwts, MARGIN=2,
-                   FUN=function(x) unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                                pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                rho00=df2.VaryCVs.rho.star, rho10=df2.VaryCVs.rho.star, rho01=df2.VaryCVs.rho.star, rho11=df2.VaryCVs.rho.star,
-                                                n00wts=x*.2, n10wts=x*.2, n01wts=x*.3, n11wts=x*.3,
-                                                K.tot=K.total)))
 df2.VaryCVs$rho.star <- rep(df2.VaryCVs.rho.star,dim(df2.VaryCVs)[1])
-df2.VaryCVs$corvar.eq <- unlist(ResMat.eq["Cor",])
-df2.VaryCVs$indvar.eq <- unlist(ResMat.eq["Ind",])
-df2.VaryCVs$exchvar.eq <- unlist(ResMat.eq["Exch",])
-ResMat.eq.rho0 <- apply(X=nwts, MARGIN=2,
-                   FUN=function(x) unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                                pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                rho00=icc.ctrlonly, rho10=icc.ctrlonly, rho01=icc.ctrlonly, rho11=icc.ctrlonly,
-                                                n00wts=x*.2, n10wts=x*.2, n01wts=x*.3, n11wts=x*.3,
-                                                K.tot=K.total)))
-df2.VaryCVs$exchvar.eq.rho0 <- unlist(ResMat.eq.rho0["Exch",])
-ResMat.eq.rho1 <- apply(X=nwts, MARGIN=2,
-                          FUN=function(x) unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                                       pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                       rho00=icc.trt, rho10=icc.trt, rho01=icc.trt, rho11=icc.trt,
-                                                       n00wts=x*.2, n10wts=x*.2, n01wts=x*.3, n11wts=x*.3,
-                                                       K.tot=K.total)))
-df2.VaryCVs$exchvar.eq.rho1 <- unlist(ResMat.eq.rho1["Exch",])
+ResMat.SS <- apply(X=nwts, MARGIN=2,
+                FUN=function(x) unlist(SSest2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
+                                              pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                              rho00=icc.ctrl.E0, rho10=icc.trt.E0, rho01=icc.ctrl.E1, rho11=icc.trt.E1,
+                                              n00wts=x*.2, n10wts=x*.2, n01wts=x*.3, n11wts=x*.3,
+                                              sig=alpha, pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df2.VaryCVs <- cbind(df2.VaryCVs, t(ResMat.SS))
 
 ### Varying Cluster Size Mean ###
 df2.VaryMeans <- data.frame(Means=seq(from=5,to=20,length.out=len))
@@ -661,30 +572,15 @@ df2.VaryMeans$corvar <- unlist(ResMat["Cor",])
 df2.VaryMeans$indvar <- unlist(ResMat["Ind",])
 df2.VaryMeans$exchvar <- unlist(ResMat["Exch",])
 df2.VaryMeans.rho.star <- unname(unlist(ResMat["rho.star",1]))
-ResMat.eq <- apply(X=nwts, MARGIN=2,
-                   FUN=function(x) unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                                pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                rho00=df2.VaryMeans.rho.star, rho10=df2.VaryMeans.rho.star, rho01=df2.VaryMeans.rho.star, rho11=df2.VaryMeans.rho.star,
-                                                n00wts=x*.2, n10wts=x*.2, n01wts=x*.3, n11wts=x*.3,
-                                                K.tot=K.total)))
 df2.VaryMeans$rho.star <- rep(df2.VaryMeans.rho.star,dim(df2.VaryMeans)[1])
-df2.VaryMeans$corvar.eq <- unlist(ResMat.eq["Cor",])
-df2.VaryMeans$indvar.eq <- unlist(ResMat.eq["Ind",])
-df2.VaryMeans$exchvar.eq <- unlist(ResMat.eq["Exch",])
-ResMat.eq.rho0 <- apply(X=nwts, MARGIN=2,
-                   FUN=function(x) unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                                pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                rho00=icc.ctrlonly, rho10=icc.ctrlonly, rho01=icc.ctrlonly, rho11=icc.ctrlonly,
-                                                n00wts=x*.2, n10wts=x*.2, n01wts=x*.3, n11wts=x*.3,
-                                                K.tot=K.total)))
-df2.VaryMeans$exchvar.eq.rho0 <- unlist(ResMat.eq.rho0["Exch",])
-ResMat.eq.rho1 <- apply(X=nwts, MARGIN=2,
-                          FUN=function(x) unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                                       pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                       rho00=icc.trt, rho10=icc.trt, rho01=icc.trt, rho11=icc.trt,
-                                                       n00wts=x*.2, n10wts=x*.2, n01wts=x*.3, n11wts=x*.3,
-                                                       K.tot=K.total)))
-df2.VaryMeans$exchvar.eq.rho1 <- unlist(ResMat.eq.rho1["Exch",])
+ResMat.SS <- apply(X=nwts, MARGIN=2,
+                FUN=function(x) unlist(SSest2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
+                                              pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                              rho00=icc.ctrl.E0, rho10=icc.trt.E0, rho01=icc.ctrl.E1, rho11=icc.trt.E1,
+                                              n00wts=x*.2, n10wts=x*.2, n01wts=x*.3, n11wts=x*.3,
+                                              sig=alpha, pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df2.VaryMeans <- cbind(df2.VaryMeans,t(ResMat.SS))
 
 Plot.Res4(resdf1=df2.VaryMeans, resdf2=df2.VaryCVs,
           xlab1="Mean Cluster Size", xlab2="CV of Cluster Size Distribution",
@@ -707,8 +603,8 @@ Plot.SS.Full(resdf=df2.RhoRatio,bquote(rho["01"]/rho["00"]==rho["11"]/rho["10"])
              ylimit=c(80,120), colors=SS.cols, logX=TRUE, truthb=log(icc.ctrl.E1/icc.ctrl.E0))
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df2.pi.Eratio,bquote(pi["01"]/pi["00"]==pi["11"]/pi["10"]), xvar="pi.ratio",
@@ -717,8 +613,8 @@ Plot.SS.Full(resdf=df2.pi.Eratio,bquote(pi["01"]/pi["00"]==pi["11"]/pi["10"]), x
         ylimit=c(80,120), colors=SS.cols, logX=TRUE, truthb=log(pi.ctrl.E1/pi.ctrl.E0))
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df2.VaryMeans,xlab=bquote("Mean"~"Cluster Size"), xvar="truemeans",
@@ -726,8 +622,8 @@ Plot.SS.Full(resdf=df2.VaryMeans,xlab=bquote("Mean"~"Cluster Size"), xvar="truem
         ylimit=c(80,120), colors=SS.cols)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df2.VaryCVs,xlab=bquote("CV"~"of Cluster Size Distribution"), xvar="trueCVs",
@@ -735,8 +631,8 @@ Plot.SS.Full(resdf=df2.VaryCVs,xlab=bquote("CV"~"of Cluster Size Distribution"),
         ylimit=c(80,120), colors=SS.cols)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 dev.off()
@@ -745,7 +641,7 @@ dev.off()
 ###### Varying Parameters Differentially Between Arms ######
 
 ### Varying Ratio of ICCs due to Electrification Differentially ###
-###  Between Intervention (Arm 1) and Control (Arm 0) Arms ###
+###  Between Treated (Arm 1) and Control (Arm 0) Arms ###
 df2.RhoArm1 <- data.frame(rho.ratio=seq(from=log(1/4),to=log(4),length.out=len))
 df2.RhoArm1$rho00s <- icc.ctrl.E0
 df2.RhoArm1$rho10s <- icc.trt.E0
@@ -780,62 +676,24 @@ df2.RhoArm0$corvar <- unlist(ResMat0["Cor",])
 df2.RhoArm0$indvar <- unlist(ResMat0["Ind",])
 df2.RhoArm0$exchvar <- unlist(ResMat0["Exch",])
 df2.RhoArm0$rho.star <- unlist(ResMat0["rho.star",])
-ResMat.eq <- sapply(X=df2.RhoArm1$rho.star,
-                    FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                 pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                 rho00=x, rho10=x, rho01=x, rho11=x,
-                                                 n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                 n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                 K.tot=K.total)))
-df2.RhoArm1$corvar.eq <- unlist(ResMat.eq["Cor",])
-df2.RhoArm1$indvar.eq <- unlist(ResMat.eq["Ind",])
-df2.RhoArm1$exchvar.eq <- unlist(ResMat.eq["Exch",])
-ResMat.eq0 <- sapply(X=df2.RhoArm0$rho.star,
-                     FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                  pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                  rho00=x, rho10=x, rho01=x, rho11=x,
-                                                  n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                  n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                  K.tot=K.total)))
-df2.RhoArm0$corvar.eq <- unlist(ResMat.eq0["Cor",])
-df2.RhoArm0$indvar.eq <- unlist(ResMat.eq0["Ind",])
-df2.RhoArm0$exchvar.eq <- unlist(ResMat.eq0["Exch",])
-ResMat.eq1.rho0 <- apply(X=df2.RhoArm1, MARGIN=1,
-                         FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                      pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                      rho00=.4*x["rho00s"]+.6*x["rho01s"], rho10=.4*x["rho00s"]+.6*x["rho01s"], 
-                                                      rho01=.4*x["rho00s"]+.6*x["rho01s"], rho11=.4*x["rho00s"]+.6*x["rho01s"],
-                                                      n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                      n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                      K.tot=K.total)))
-df2.RhoArm1$exchvar.eq.rho0 <- unlist(ResMat.eq1.rho0["Exch",])
-ResMat.eq1.rho1 <- apply(X=df2.RhoArm1, MARGIN=1,
-                         FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                      pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                      rho00=.4*x["rho10s"]+.6*x["rho11s"], rho10=.4*x["rho10s"]+.6*x["rho11s"], 
-                                                      rho01=.4*x["rho10s"]+.6*x["rho11s"], rho11=.4*x["rho10s"]+.6*x["rho11s"],
-                                                      n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                      n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                      K.tot=K.total)))
-df2.RhoArm1$exchvar.eq.rho1 <- unlist(ResMat.eq1.rho1["Exch",])
-ResMat.eq0.rho0 <- apply(X=df2.RhoArm0, MARGIN=1,
-                     FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                  pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                  rho00=.4*x["rho00s"]+.6*x["rho01s"], rho10=.4*x["rho00s"]+.6*x["rho01s"], 
-                                                  rho01=.4*x["rho00s"]+.6*x["rho01s"], rho11=.4*x["rho00s"]+.6*x["rho01s"],
-                                                  n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                  n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                  K.tot=K.total)))
-df2.RhoArm0$exchvar.eq.rho0 <- unlist(ResMat.eq0.rho0["Exch",])
-ResMat.eq0.rho1 <- apply(X=df2.RhoArm0, MARGIN=1,
-                         FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                      pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                                      rho00=.4*x["rho10s"]+.6*x["rho11s"], rho10=.4*x["rho10s"]+.6*x["rho11s"], 
-                                                      rho01=.4*x["rho10s"]+.6*x["rho11s"], rho11=.4*x["rho10s"]+.6*x["rho11s"],
-                                                      n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                      n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                      K.tot=K.total)))
-df2.RhoArm0$exchvar.eq.rho1 <- unlist(ResMat.eq0.rho1["Exch",])
+ResMat.SS <- apply(X=df2.RhoArm1, MARGIN=1,
+                FUN=function(x) unlist(SSest2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
+                                             pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                             rho00=x["rho00s"], rho10=x["rho10s"], rho01=x["rho01s"], rho11=x["rho11s"],
+                                             n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
+                                             n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
+                                             sig=alpha, pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df2.RhoArm1 <- cbind(df2.RhoArm1, t(ResMat.SS))
+ResMat.SS0 <- apply(X=df2.RhoArm0, MARGIN=1,
+                 FUN=function(x) unlist(SSest2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
+                                               pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                               rho00=x["rho00s"], rho10=x["rho10s"], rho01=x["rho01s"], rho11=x["rho11s"],
+                                               n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
+                                               n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
+                                               sig=alpha, pwr=power)))
+rownames(ResMat.SS0) <- SSmat.names
+df2.RhoArm0 <- cbind(df2.RhoArm0, t(ResMat.SS0))
 
 Plot.Res4(resdf1=df2.RhoArm0, resdf2=df2.RhoArm1,
           xlab1=bquote(rho["01"]/rho["00"]), xlab2=bquote(rho["11"]/rho["10"]),
@@ -848,7 +706,7 @@ Plot.Res4(resdf1=df2.RhoArm0, resdf2=df2.RhoArm1,
 
 
 ### Varying Ratio of Pis due to Electrification Differentially ###
-###  Between Intervention (Arm 1) and Control (Arm 0) Arms ###
+###  Between Treated (Arm 1) and Control (Arm 0) Arms ###
 df2.PiArm1 <- data.frame(pi.ratio=seq(from=log(1/2),to=log(2),length.out=len))
 df2.PiArm1$pi00s <- pi.ctrl.E0
 df2.PiArm1$pi10s <- pi.trt.E0
@@ -883,58 +741,24 @@ df2.PiArm0$corvar <- unlist(ResMat0["Cor",])
 df2.PiArm0$indvar <- unlist(ResMat0["Ind",])
 df2.PiArm0$exchvar <- unlist(ResMat0["Exch",])
 df2.PiArm0$rho.star <- unlist(ResMat0["rho.star",])
-ResMat.eq <- apply(X=df2.PiArm1, MARGIN=1,
-                    FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                 pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
-                                                 rho00=x["rho.star"], rho10=x["rho.star"], rho01=x["rho.star"], rho11=x["rho.star"],
-                                                 n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                 n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                 K.tot=K.total)))
-df2.PiArm1$corvar.eq <- unlist(ResMat.eq["Cor",])
-df2.PiArm1$indvar.eq <- unlist(ResMat.eq["Ind",])
-df2.PiArm1$exchvar.eq <- unlist(ResMat.eq["Exch",])
-ResMat.eq0 <- apply(X=df2.PiArm0, MARGIN=1,
-                     FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                  pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
-                                                  rho00=x["rho.star"], rho10=x["rho.star"], rho01=x["rho.star"], rho11=x["rho.star"],
-                                                  n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                  n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                  K.tot=K.total)))
-df2.PiArm0$corvar.eq <- unlist(ResMat.eq0["Cor",])
-df2.PiArm0$indvar.eq <- unlist(ResMat.eq0["Ind",])
-df2.PiArm0$exchvar.eq <- unlist(ResMat.eq0["Exch",])
-ResMat.eq1.rho0 <- apply(X=df2.PiArm1, MARGIN=1,
-                         FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                      pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
-                                                      rho00=icc.ctrlonly, rho10=icc.ctrlonly, rho01=icc.ctrlonly, rho11=icc.ctrlonly,
-                                                      n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                      n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                      K.tot=K.total)))
-df2.PiArm1$exchvar.eq.rho0 <- unlist(ResMat.eq1.rho0["Exch",])
-ResMat.eq1.rho1 <- apply(X=df2.PiArm1, MARGIN=1,
-                         FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                      pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
-                                                      rho00=icc.trt, rho10=icc.trt, rho01=icc.trt, rho11=icc.trt,
-                                                      n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                      n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                      K.tot=K.total)))
-df2.PiArm1$exchvar.eq.rho1 <- unlist(ResMat.eq1.rho1["Exch",])
-ResMat.eq0.rho0 <- apply(X=df2.PiArm0, MARGIN=1,
-                         FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                      pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
-                                                      rho00=icc.ctrlonly, rho10=icc.ctrlonly, rho01=icc.ctrlonly, rho11=icc.ctrlonly,
-                                                      n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                      n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                      K.tot=K.total)))
-df2.PiArm0$exchvar.eq.rho0 <- unlist(ResMat.eq0.rho0["Exch",])
-ResMat.eq0.rho1 <- apply(X=df2.PiArm0, MARGIN=1,
-                         FUN=function(x) unlist(Vars2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
-                                                      pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
-                                                      rho00=icc.trt, rho10=icc.trt, rho01=icc.trt, rho11=icc.trt,
-                                                      n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
-                                                      n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
-                                                      K.tot=K.total)))
-df2.PiArm0$exchvar.eq.rho1 <- unlist(ResMat.eq0.rho1["Exch",])
+ResMat.SS <- apply(X=df2.PiArm1, MARGIN=1,
+                FUN=function(x) unlist(SSest2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
+                                              pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
+                                              rho00=icc.ctrl.E0, rho10=icc.trt.E0, rho01=icc.ctrl.E1, rho11=icc.trt.E1,
+                                              n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
+                                              n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
+                                              sig=alpha, pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df2.PiArm1 <- cbind(df2.PiArm1, t(ResMat.SS))
+ResMat.SS0 <- apply(X=df2.PiArm0, MARGIN=1,
+                 FUN=function(x) unlist(SSest2(n00vec=ClustSizes,n10vec=ClustSizes, n01vec=ClustSizes, n11vec=ClustSizes,
+                                               pi00=x["pi00s"], pi10=x["pi10s"], pi01=x["pi01s"], pi11=x["pi11s"],
+                                               rho00=icc.ctrl.E0, rho10=icc.trt.E0, rho01=icc.ctrl.E1, rho11=icc.trt.E1,
+                                               n00wts=rep(.2,length(ClustSizes)), n10wts=rep(.2,length(ClustSizes)),
+                                               n01wts=rep(.3,length(ClustSizes)), n11wts=rep(.3,length(ClustSizes)),
+                                               sig=alpha, pwr=power)))
+rownames(ResMat.SS0) <- SSmat.names
+df2.PiArm0 <- cbind(df2.PiArm0, t(ResMat.SS0))
 
 Plot.Res4(resdf1=df2.PiArm0, resdf2=df2.PiArm1,
           xlab1=bquote(pi["01"]/pi["00"]), xlab2=bquote(pi["11"]/pi["10"]),
@@ -983,71 +807,23 @@ df2.VaryE0$corvar <- unlist(ResMat0["Cor",])
 df2.VaryE0$indvar <- unlist(ResMat0["Ind",])
 df2.VaryE0$exchvar <- unlist(ResMat0["Exch",])
 df2.VaryE0$rho.star <- unlist(ResMat0["rho.star",])
-ResMat.eq <- matrix(data=NA, nrow=4, ncol=len)
-row.names(ResMat.eq) <- c("rho.star","Cor","Ind","Exch")
-ResMat.eq.rho0 <- ResMat.eq
-ResMat.eq.rho1 <- ResMat.eq
-for (i in 1:len) {
-  ResMat.eq[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                rho00=df2.VaryE1$rho.star[i], rho10=df2.VaryE1$rho.star[i],
-                                rho01=df2.VaryE1$rho.star[i], rho11=df2.VaryE1$rho.star[i],
-                                n00wts=nwts*.2, n10wts=nwts*.2,
-                                n01wts=nwtsVary[,i]*.3, n11wts=nwtsVary[,i]*.3,
-                                K.tot=K.total))
-  ResMat.eq.rho0[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                     pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                     rho00=icc.ctrlonly, rho10=icc.ctrlonly, 
-                                     rho01=icc.ctrlonly, rho11=icc.ctrlonly,
-                                     n00wts=nwts*.2, n10wts=nwts*.2,
-                                     n01wts=nwtsVary[,i]*.3, n11wts=nwtsVary[,i]*.3,
-                                     K.tot=K.total))
-  ResMat.eq.rho1[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                     pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                     rho00=icc.trt, rho10=icc.trt, 
-                                     rho01=icc.trt, rho11=icc.trt,
-                                     n00wts=nwts*.2, n10wts=nwts*.2,
-                                     n01wts=nwtsVary[,i]*.3, n11wts=nwtsVary[,i]*.3,
-                                     K.tot=K.total))
-}
-df2.VaryE1$corvar.eq <- ResMat.eq["Cor",]
-df2.VaryE1$indvar.eq <- ResMat.eq["Ind",]
-df2.VaryE1$exchvar.eq <- ResMat.eq["Exch",]
-df2.VaryE1$exchvar.eq.rho0 <- ResMat.eq.rho0["Exch",]
-df2.VaryE1$exchvar.eq.rho1 <- ResMat.eq.rho1["Exch",]
 
-ResMat.eq0 <- matrix(data=NA, nrow=4, ncol=len)
-row.names(ResMat.eq0) <- c("rho.star","Cor","Ind","Exch")
-ResMat.eq0.rho0 <- ResMat.eq0
-ResMat.eq0.rho1 <- ResMat.eq0
-for (i in 1:len) {
-  ResMat.eq0[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                 pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                 rho00=df2.VaryE0$rho.star[i], rho10=df2.VaryE0$rho.star[i],
-                                 rho01=df2.VaryE0$rho.star[i], rho11=df2.VaryE0$rho.star[i],
-                                 n00wts=nwtsVary[,i]*.2, n10wts=nwtsVary[,i]*.2,
-                                 n01wts=nwts*.3, n11wts=nwts*.3,
-                                 K.tot=K.total))
-  ResMat.eq0.rho0[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                      pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                      rho00=icc.ctrlonly, rho10=icc.ctrlonly,
-                                      rho01=icc.ctrlonly, rho11=icc.ctrlonly,
-                                      n00wts=nwtsVary[,i]*.2, n10wts=nwtsVary[,i]*.2,
-                                      n01wts=nwts*.3, n11wts=nwts*.3,
-                                      K.tot=K.total))
-  ResMat.eq0.rho1[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                      pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                      rho00=icc.trt, rho10=icc.trt,
-                                      rho01=icc.trt, rho11=icc.trt,
-                                      n00wts=nwtsVary[,i]*.2, n10wts=nwtsVary[,i]*.2,
-                                      n01wts=nwts*.3, n11wts=nwts*.3,
-                                      K.tot=K.total))
-}
-df2.VaryE0$corvar.eq <- ResMat.eq0["Cor",]
-df2.VaryE0$indvar.eq <- ResMat.eq0["Ind",]
-df2.VaryE0$exchvar.eq <- ResMat.eq0["Exch",]
-df2.VaryE0$exchvar.eq.rho0 <- ResMat.eq0.rho0["Exch",]
-df2.VaryE0$exchvar.eq.rho1 <- ResMat.eq0.rho1["Exch",]
+ResMat.SS <- apply(X=nwtsVary, MARGIN=2,
+                   FUN=function(x) unlist(SSest2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
+                                                 pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                                 rho00=icc.ctrl.E0, rho10=icc.trt.E0, rho01=icc.ctrl.E1, rho11=icc.trt.E1,
+                                                 n00wts=nwts*.2, n10wts=nwts*.2, n01wts=x*.3, n11wts=x*.3,
+                                                 sig=alpha, pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df2.VaryE1 <- cbind(df2.VaryE1, t(ResMat.SS))
+ResMat.SS0 <- apply(X=nwtsVary, MARGIN=2,
+                 FUN=function(x) unlist(SSest2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
+                                               pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                               rho00=icc.ctrl.E0, rho10=icc.trt.E0, rho01=icc.ctrl.E1, rho11=icc.trt.E1,
+                                               n00wts=x*.2, n10wts=x*.2, n01wts=nwts*.3, n11wts=nwts*.3,
+                                               sig=alpha, pwr=power)))
+rownames(ResMat.SS0) <- SSmat.names
+df2.VaryE0 <- cbind(df2.VaryE0, t(ResMat.SS0))
 
 Plot.Res4(resdf1=df2.VaryE0, resdf2=df2.VaryE1,
           xlab1=bquote("Mean Cluster Size when"~Z["2i"]==0), xlab2=bquote("Mean Cluster Size when"~Z["2i"]==1),
@@ -1092,68 +868,23 @@ df2.VaryE0CV$corvar <- unlist(ResMat0["Cor",])
 df2.VaryE0CV$indvar <- unlist(ResMat0["Ind",])
 df2.VaryE0CV$exchvar <- unlist(ResMat0["Exch",])
 df2.VaryE0CV$rho.star <- unlist(ResMat0["rho.star",])
-ResMat.eq <- matrix(data=NA, nrow=4, ncol=len)
-row.names(ResMat.eq) <- c("rho.star","Cor","Ind","Exch")
-ResMat.eq.rho0 <- ResMat.eq
-ResMat.eq.rho1 <- ResMat.eq
-for (i in 1:len) {
-  ResMat.eq[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                rho00=df2.VaryE1CV$rho.star[i], rho10=df2.VaryE1CV$rho.star[i],
-                                rho01=df2.VaryE1CV$rho.star[i], rho11=df2.VaryE1CV$rho.star[i],
-                                n00wts=nwts*.2, n10wts=nwts*.2, n01wts=nwtsVaryCV[,i]*.3, n11wts=nwtsVaryCV[,i]*.3,
-                                K.tot=K.total))
-  ResMat.eq.rho0[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                     pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                     rho00=icc.ctrlonly, rho10=icc.ctrlonly,
-                                     rho01=icc.ctrlonly, rho11=icc.ctrlonly,
-                                     n00wts=nwts*.2, n10wts=nwts*.2, n01wts=nwtsVaryCV[,i]*.3, n11wts=nwtsVaryCV[,i]*.3,
-                                     K.tot=K.total))
-  ResMat.eq.rho1[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                     pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                     rho00=icc.trt, rho10=icc.trt,
-                                     rho01=icc.trt, rho11=icc.trt,
-                                     n00wts=nwts*.2, n10wts=nwts*.2, n01wts=nwtsVaryCV[,i]*.3, n11wts=nwtsVaryCV[,i]*.3,
-                                     K.tot=K.total))
-}
-df2.VaryE1CV$corvar.eq <- ResMat.eq["Cor",]
-df2.VaryE1CV$indvar.eq <- ResMat.eq["Ind",]
-df2.VaryE1CV$exchvar.eq <- ResMat.eq["Exch",]
-df2.VaryE1CV$exchvar.eq.rho0 <- ResMat.eq.rho0["Exch",]
-df2.VaryE1CV$exchvar.eq.rho1 <- ResMat.eq.rho1["Exch",]
 
-ResMat.eq0 <- matrix(data=NA, nrow=4, ncol=len)
-row.names(ResMat.eq0) <- c("rho.star","Cor","Ind","Exch")
-ResMat.eq0.rho0 <- ResMat.eq0
-ResMat.eq0.rho1 <- ResMat.eq0
-for (i in 1:len) {
-  ResMat.eq0[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                 pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                 rho00=df2.VaryE0CV$rho.star[i], rho10=df2.VaryE0CV$rho.star[i],
-                                 rho01=df2.VaryE0CV$rho.star[i], rho11=df2.VaryE0CV$rho.star[i],
-                                 n00wts=nwtsVaryCV[,i]*.2, n10wts=nwtsVaryCV[,i]*.2,
-                                 n01wts=nwts*.3, n11wts=nwts*.3,
-                                 K.tot=K.total))
-  ResMat.eq0.rho0[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                      pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                      rho00=icc.ctrlonly, rho10=icc.ctrlonly,
-                                      rho01=icc.ctrlonly, rho11=icc.ctrlonly,
-                                      n00wts=nwtsVaryCV[,i]*.2, n10wts=nwtsVaryCV[,i]*.2,
-                                      n01wts=nwts*.3, n11wts=nwts*.3,
-                                      K.tot=K.total))
-  ResMat.eq0.rho1[,i] <- unlist(Vars2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
-                                      pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
-                                      rho00=icc.trt, rho10=icc.trt,
-                                      rho01=icc.trt, rho11=icc.trt,
-                                      n00wts=nwtsVaryCV[,i]*.2, n10wts=nwtsVaryCV[,i]*.2,
-                                      n01wts=nwts*.3, n11wts=nwts*.3,
-                                      K.tot=K.total))
-}
-df2.VaryE0CV$corvar.eq <- ResMat.eq0["Cor",]
-df2.VaryE0CV$indvar.eq <- ResMat.eq0["Ind",]
-df2.VaryE0CV$exchvar.eq <- ResMat.eq0["Exch",]
-df2.VaryE0CV$exchvar.eq.rho0 <- ResMat.eq0.rho0["Exch",]
-df2.VaryE0CV$exchvar.eq.rho1 <- ResMat.eq0.rho1["Exch",]
+ResMat.SS <- apply(X=nwtsVaryCV, MARGIN=2,
+                FUN=function(x) unlist(SSest2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
+                                              pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                              rho00=icc.ctrl.E0, rho10=icc.trt.E0, rho01=icc.ctrl.E1, rho11=icc.trt.E1,
+                                              n00wts=nwts*.2, n10wts=nwts*.2, n01wts=x*.3, n11wts=x*.3,
+                                              sig=alpha, pwr=power)))
+rownames(ResMat.SS) <- SSmat.names
+df2.VaryE1CV <- cbind(df2.VaryE1CV, t(ResMat.SS))
+ResMat.SS0 <- apply(X=nwtsVaryCV, MARGIN=2,
+                 FUN=function(x) unlist(SSest2(n00vec=nvec, n10vec=nvec, n01vec=nvec, n11vec=nvec,
+                                               pi00=pi.ctrl.E0, pi10=pi.trt.E0, pi01=pi.ctrl.E1, pi11=pi.trt.E1,
+                                               rho00=icc.ctrl.E0, rho10=icc.trt.E0, rho01=icc.ctrl.E1, rho11=icc.trt.E1,
+                                               n00wts=x*.2, n10wts=x*.2, n01wts=nwts*.3, n11wts=nwts*.3,
+                                               sig=alpha, pwr=power)))
+rownames(ResMat.SS0) <- SSmat.names
+df2.VaryE0CV <- cbind(df2.VaryE0CV, t(ResMat.SS0))
 
 Plot.Res4(resdf1=df2.VaryE0CV, resdf2=df2.VaryE1CV,
           xlab1=bquote("CV of Cluster Size Distribution when"~Z["1i"]==0),
@@ -1167,7 +898,7 @@ Plot.Res4(resdf1=df2.VaryE0CV, resdf2=df2.VaryE1CV,
           colors=Res.cols)
 
 ### Sample Size Plotting for Differentially Varying ###
-### Rho and Pi Ratios Between Intervention Arms ###
+### Rho and Pi Ratios Between Treatment Arms ###
 setEPS()
 postscript(file=paste0("SS_2CovarArmsRatios.eps"),
            width=12, height=12, paper="special")
@@ -1178,8 +909,8 @@ Plot.SS.Full(resdf=df2.RhoArm0,bquote(rho["01"]/rho["00"]), xvar="rho.ratio",
              ylimit=c(80,120), colors=SS.cols, logX=TRUE)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df2.RhoArm1,bquote(rho["11"]/rho["10"]), xvar="rho.ratio",
@@ -1188,8 +919,8 @@ Plot.SS.Full(resdf=df2.RhoArm1,bquote(rho["11"]/rho["10"]), xvar="rho.ratio",
              ylimit=c(80,120), colors=SS.cols, logX=TRUE)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df2.PiArm0,bquote(pi["01"]/pi["00"]), xvar="pi.ratio",
@@ -1198,8 +929,8 @@ Plot.SS.Full(resdf=df2.PiArm0,bquote(pi["01"]/pi["00"]), xvar="pi.ratio",
              ylimit=c(80,120), colors=SS.cols, logX=TRUE)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df2.PiArm1,bquote(pi["11"]/pi["10"]), xvar="pi.ratio",
@@ -1208,8 +939,8 @@ Plot.SS.Full(resdf=df2.PiArm1,bquote(pi["11"]/pi["10"]), xvar="pi.ratio",
              ylimit=c(80,120), colors=SS.cols, logX=TRUE)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 dev.off()
@@ -1225,8 +956,8 @@ Plot.SS.Full(resdf=df2.VaryE0,xlab=bquote("Mean Cluster Size when"~Z["2i"]==0),
              truth=muAdj+1, ylimit=c(80,120), colors=SS.cols)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df2.VaryE1,xlab=bquote("Mean Cluster Size when"~Z["2i"]==1),
@@ -1234,8 +965,8 @@ Plot.SS.Full(resdf=df2.VaryE1,xlab=bquote("Mean Cluster Size when"~Z["2i"]==1),
              truth=muAdj+1, ylimit=c(80,120), colors=SS.cols)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df2.VaryE0CV,xlab=bquote("CV of Cluster Size Distribution when"~Z["2i"]==0),
@@ -1243,8 +974,8 @@ Plot.SS.Full(resdf=df2.VaryE0CV,xlab=bquote("CV of Cluster Size Distribution whe
              truth=cv, ylimit=c(80,120), colors=SS.cols)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 Plot.SS.Full(resdf=df2.VaryE1CV,xlab=bquote("CV of Cluster Size Distribution when"~Z["2i"]==1),
@@ -1252,8 +983,8 @@ Plot.SS.Full(resdf=df2.VaryE1CV,xlab=bquote("CV of Cluster Size Distribution whe
              truth=cv, ylimit=c(80,120), colors=SS.cols)
 legend(x="bottom",legend=c(expression("Correctly Specified"),
                            expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho[1]),
-                           expression("Common Exchangeable"~rho*"*")),
+                           expression("Common Exchangeable,"~rho*"*"),
+                           expression("Common Exchangeable,"~rho[1])),
        col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
        ncol=2)
 dev.off()
