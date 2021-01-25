@@ -5,9 +5,11 @@ source("Variance_Functions.R")
 ###### Load Required Packages ######
 require(gee)
 require(LaplacesDemon)
+require(tidyverse)
+require(patchwork)
 
 ###### Read Data ######
-Lin  <- read.csv(file="Lin2018Protozoa.csv")
+Lin  <- read.csv(file="Lin2018.csv")
 Lin2 <- Lin[Lin$delta_prot=="Observed",] # Only use those with observed results
 
 ## Create cluster-level electricification variable: ##
@@ -83,198 +85,273 @@ len <- 401 #Length of vectors to generate plot lines (higher means more resoluti
 Res.cols <- c(1,"#1f78b4","#a6cee3")
 SS.cols <- c(1,"#bae4b3","#756bb1","#54278f")
 
-Plot.Res4 <- function(resdf1,resdf2,xlab1,xlab2,xvar1,xvar2,xtitle1,xtitle2,fileout, 
-                      truth1=NULL, truth2=NULL, 
-                      ylimit1=NULL, ylimit2=NULL, 
-                      colors=Res.cols,
-                      logX1=FALSE, logX2=FALSE,
-                      truth1b=NULL, truth2b=NULL) {
-  setEPS()
-  postscript(file=paste0(fileout,".eps"),
-             width=12, height=12, paper="special")
-  par(mfrow=c(2,2))
-  if (is.null(ylimit1)) {
-    ylimit1 <- c(floor(min(min(resdf1[,c("indvar","corvar","exchvar")]),min(resdf2[,c("indvar","corvar","exchvar")]))),
-                 ceiling(max(max(resdf1[,c("indvar","corvar","exchvar")]),max(resdf2[,c("indvar","corvar","exchvar")]))))
-  }
-  if (!logX1) {
-    xvals1 <- resdf1[,xvar1]
-    logval1 <- ""
-    xaxtval1 <- NULL
-  } else {
-    xvals1 <- exp(resdf1[,xvar1])
-    if (!is.null(truth1)) {
-      truth1 <- exp(truth1)
-    }
-    if (!is.null(truth1b)) {
-      truth1b <- exp(truth1b)
-    }
-    logval1 <- "x"
-    xaxtval1 <- "n"
-  }
-  plot(x=xvals1,y=sqrt(resdf1$indvar),type="l",col=colors[3],lty=2,lwd=6,
-       xlab=xlab1, ylab="Standard Error of Estimate",
-       ylim=ylimit1,
-       main=bquote("a."~"SE vs."~.(xtitle1)~"by WCS"),
-       log=logval1, xaxt=xaxtval1
-  )
-  if (logX1) {
-    axis(1, at=c(1/4,1/2,3/4,1,3/2,2,3,4), 
-         labels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"))
-  }
-  lines(x=xvals1,y=sqrt(resdf1$corvar),type="l",col=colors[1],lty=1,lwd=6)
-  lines(x=xvals1,y=sqrt(resdf1$exchvar),type="l",col=colors[2],lty=3,lwd=6)
+Plot.Res4.gg <- function(resdf1,resdf2,xlab1,xlab2,
+                         xtitle1,xtitle2,
+                         xvar1,xvar2,
+                         fileout,
+                         xbreaks1=NULL, xbreaks2=NULL,
+                         xlabels1=NULL, xlabels2=NULL,
+                         ylimSE=NULL, ylimARE=NULL,
+                         truth1=NULL, truth2=NULL,
+                         truecol="red", truelty=2, linesize=1,
+                         truth1b=NULL, truth2b=NULL, trueltyb=2) {
+  
+  tib1 <- tibble(X=rep(resdf1[,xvar1],3),
+                     Type=rep(c("(i) Correct","(ii) Independent","(iii) Exchangeable"), 
+                              each=length(resdf1[,xvar1])),
+                     SE=sqrt(c(resdf1$corvar,resdf1$indvar,resdf1$exchvar)),
+                     ARE=c(resdf1$corvar/resdf1$corvar*100,
+                           resdf1$corvar/resdf1$indvar*100,
+                           resdf1$corvar/resdf1$exchvar*100))
+  
+  tib2 <- tibble(X=rep(resdf2[,xvar2],3),
+                 Type=rep(c("(i) Correct","(ii) Independent","(iii) Exchangeable"), 
+                          each=length(resdf2[,xvar2])),
+                 SE=sqrt(c(resdf2$corvar,resdf2$indvar,resdf2$exchvar)),
+                 ARE=c(resdf2$corvar/resdf2$corvar*100,
+                       resdf2$corvar/resdf2$indvar*100,
+                       resdf2$corvar/resdf2$exchvar*100))
+  
+  g.a <- ggplot(tib1, aes(x=X, y=SE, color=Type, linetype=Type)) +
+    geom_line(size=linesize) +
+    scale_color_manual(name="Working Correlation Structure",
+                       values=Res.cols) +
+    scale_linetype_manual(name="Working Correlation Structure",
+                          values=c(1,4,3)) +
+    guides(color=guide_legend(override.aes=list(size=1))) +
+    theme_light()
   if (!is.null(truth1)) {
-    abline(v=truth1, col=2, lty=4, lwd=3)
+    g.a <- g.a + geom_vline(aes(xintercept=truth1), color=truecol, linetype=truelty)
   }
   if (!is.null(truth1b)) {
-    abline(v=truth1b, col=2, lty=1, lwd=3)
+    g.a <- g.a + geom_vline(aes(xintercept=truth1b), color=truecol, linetype=trueltyb)
   }
-  legend(x="topright",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(3,3),col=colors,  
-         cex=1.5, bg="white")
-  
-  if (!logX2) {
-    xvals2 <- resdf2[,xvar2]
-    logval2 <- ""
-    xaxtval2 <- NULL
+  if (is.null(xbreaks1)) {
+    g.a <- g.a + scale_x_continuous(name=xlab1)
+  } else if (is.null(xlabels1)) {
+    g.a <- g.a + scale_x_continuous(name=xlab1,
+                                    breaks=xbreaks1,
+                                    minor_breaks=NULL,
+                                    expand=expansion(mult=0))
   } else {
-    xvals2 <- exp(resdf2[,xvar2])
-    if (!is.null(truth2)) {
-      truth2 <- exp(truth2)
-    }
-    if (!is.null(truth2b)) {
-      truth2b <- exp(truth2b)
-    }
-    logval2 <- "x"
-    xaxtval2 <- "n"
+    g.a <- g.a + scale_x_continuous(name=xlab1,
+                                    breaks=xbreaks1,
+                                    minor_breaks=NULL,
+                                    labels=xlabels1,
+                                    expand=expansion(mult=0))
   }
-  plot(x=xvals2,y=sqrt(resdf2$indvar),type="l",col=colors[3],lty=2,lwd=6,
-       xlab=xlab2, ylab="Standard Error of Estimate",
-       ylim=ylimit1,
-       main=bquote("b."~"SE vs."~.(xtitle2)~"by WCS"),
-       log=logval2, xaxt=xaxtval2
-  )
-  if (logX2) {
-    axis(1, at=c(1/4,1/2,3/4,1,3/2,2,3,4), 
-         labels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"))
+  if (is.null(ylimSE)) {
+    g.a <- g.a + scale_y_continuous(name="Standard Error of Estimate")
+  } else {
+    g.a <- g.a + scale_y_continuous(name="Standard Error of Estimate",
+                                    limits=ylimSE)
   }
-  lines(x=xvals2,y=sqrt(resdf2$corvar),type="l",col=colors[1],lty=1,lwd=6)
-  lines(x=xvals2,y=sqrt(resdf2$exchvar),type="l",col=colors[2],lty=3,lwd=6)
-  if (!is.null(truth2)) {
-    abline(v=truth2, col=2, lty=4, lwd=3)
+  if (!is.null(xtitle1)) {
+    g.a <- g.a + labs(subtitle=bquote("SE"~"vs."~.(xtitle1)),
+                      tag="A") +
+      theme(plot.subtitle=element_text(hjust=0.5))
   }
-  if (!is.null(truth2b)) {
-    abline(v=truth2b, col=2, lty=1, lwd=3)
-  }
-  legend(x="topright",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(3,3),col=colors,  
-         cex=1.5, bg="white")
   
-  if (is.null(ylimit2)) {
-    ylimit2 <- c(floor(min(c(resdf1$corvar/resdf1$exchvar*100,resdf1$corvar/resdf1$indvar*100,
-                             resdf2$corvar/resdf2$exchvar*100,resdf2$corvar/resdf2$indvar*100))),101)
-  }
-  plot(x=xvals1,y=resdf1$corvar/resdf1$indvar*100,type="l",col=colors[3],lty=2,lwd=6,
-       xlab=xlab1, ylab="ARE (%)", 
-       ylim=ylimit2,
-       main=bquote("c."~"ARE vs."~.(xtitle1)~"by WCS"),
-       log=logval1, xaxt=xaxtval1
-  )
-  if (logX1) {
-    axis(1, at=c(1/4,1/2,3/4,1,3/2,2,3,4), 
-         labels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"))
-  }
-  lines(x=xvals1,y=resdf1$corvar/resdf1$corvar*100,type="l",col=colors[1],lty=1,lwd=6)
-  lines(x=xvals1,y=resdf1$corvar/resdf1$exchvar*100,type="l",col=colors[2],lty=3,lwd=6)
+  g.c <- ggplot(tib1, aes(x=X, y=ARE, color=Type, linetype=Type)) +
+    geom_line(size=linesize) +
+    scale_color_manual(name="Working Correlation Structure",
+                       values=Res.cols) +
+    scale_linetype_manual(name="Working Correlation Structure",
+                          values=c(1,4,3)) +
+    guides(color=guide_legend(override.aes=list(size=1))) +
+    theme_light()
   if (!is.null(truth1)) {
-    abline(v=truth1, col=2, lty=4, lwd=3)
+    g.c <- g.c + geom_vline(aes(xintercept=truth1), color=truecol, linetype=truelty)
   }
   if (!is.null(truth1b)) {
-    abline(v=truth1b, col=2, lty=1, lwd=3)
+    g.c <- g.c + geom_vline(aes(xintercept=truth1b), color=truecol, linetype=trueltyb)
   }
-  legend(x="bottomleft",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(3,3),col=colors,  
-         cex=1.5, bg="white")
+  if (is.null(xbreaks1)) {
+    g.c <- g.c + scale_x_continuous(name=xlab1)
+  } else if (is.null(xlabels1)) {
+    g.c <- g.c + scale_x_continuous(name=xlab1,
+                                    breaks=xbreaks1,
+                                    minor_breaks=NULL,
+                                    expand=expansion(mult=0))
+  } else {
+    g.c <- g.c + scale_x_continuous(name=xlab1,
+                                    breaks=xbreaks1,
+                                    minor_breaks=NULL,
+                                    labels=xlabels1,
+                                    expand=expansion(mult=0))
+  }
+  if (is.null(ylimSE)) {
+    g.c <- g.c + scale_y_continuous(name="ARE (%)")
+  } else {
+    g.c <- g.c + scale_y_continuous(name="ARE (%)",
+                                    limits=ylimARE)
+  }
+  if (!is.null(xtitle1)) {
+    g.c <- g.c + labs(subtitle=bquote("ARE"~"vs."~.(xtitle1)),
+                      tag="C") +
+      theme(plot.subtitle=element_text(hjust=0.5))
+  }
   
-  plot(x=xvals2,y=resdf2$corvar/resdf2$indvar*100,type="l",col=colors[3],lty=2,lwd=6,
-       xlab=xlab2, ylab="ARE (%)", 
-       ylim=ylimit2,
-       main=bquote("d."~"ARE vs."~.(xtitle2)~"by WCS"),
-       log=logval2, xaxt=xaxtval2
-  )
-  if (logX2) {
-    axis(1, at=c(1/4,1/2,3/4,1,3/2,2,3,4), 
-         labels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"))
-  }
-  lines(x=xvals2,y=resdf2$corvar/resdf2$corvar*100,type="l",col=colors[1],lty=1,lwd=6)
-  lines(x=xvals2,y=resdf2$corvar/resdf2$exchvar*100,type="l",col=colors[2],lty=3,lwd=6)
+  g.b <- ggplot(tib2, aes(x=X, y=SE, color=Type, linetype=Type)) +
+    geom_line(size=linesize) +
+    scale_color_manual(name="Working Correlation Structure",
+                       values=Res.cols) +
+    scale_linetype_manual(name="Working Correlation Structure",
+                          values=c(1,4,3)) +
+    guides(color=guide_legend(override.aes=list(size=1))) +
+    theme_light()
   if (!is.null(truth2)) {
-    abline(v=truth2, col=2, lty=4, lwd=3)
+    g.b <- g.b + geom_vline(aes(xintercept=truth2), color=truecol, linetype=truelty)
   }
   if (!is.null(truth2b)) {
-    abline(v=truth2b, col=2, lty=1, lwd=3)
+    g.b <- g.b + geom_vline(aes(xintercept=truth2b), color=truecol, linetype=trueltyb)
   }
-  legend(x="bottomleft",legend=c("Correct","Exchangeable","Independent"),
-         lty=c(1,3,2),lwd=rep(3,3),col=colors,  
-         cex=1.5, bg="white")
-  dev.off()
+  if (is.null(xbreaks2)) {
+    g.b <- g.b + scale_x_continuous(name=xlab2)
+  } else if (is.null(xlabels2)) {
+    g.b <- g.b + scale_x_continuous(name=xlab2,
+                                    breaks=xbreaks2,
+                                    minor_breaks=NULL,
+                                    expand=expansion(mult=0))
+  } else {
+    g.b <- g.b + scale_x_continuous(name=xlab2,
+                                    breaks=xbreaks2,
+                                    minor_breaks=NULL,
+                                    labels=xlabels2,
+                                    expand=expansion(mult=0))
+  }
+  if (is.null(ylimSE)) {
+    g.b <- g.b + scale_y_continuous(name="Standard Error of Estimate")
+  } else {
+    g.b <- g.b + scale_y_continuous(name="Standard Error of Estimate",
+                                    limits=ylimSE)
+  }
+  if (!is.null(xtitle2)) {
+    g.b <- g.b + labs(subtitle=bquote("SE"~"vs."~.(xtitle2)),
+                      tag="B") +
+      theme(plot.subtitle=element_text(hjust=0.5))
+  }
+  
+  g.d <- ggplot(tib2, aes(x=X, y=ARE, color=Type, linetype=Type)) +
+    geom_line(size=linesize) +
+    scale_color_manual(name="Working Correlation Structure",
+                       values=Res.cols) +
+    scale_linetype_manual(name="Working Correlation Structure",
+                          values=c(1,4,3)) +
+    guides(color=guide_legend(override.aes=list(size=1))) +
+    theme_light()
+  if (!is.null(truth2)) {
+    g.d <- g.d + geom_vline(aes(xintercept=truth2), color=truecol, linetype=truelty)
+  }
+  if (!is.null(truth2b)) {
+    g.d <- g.d + geom_vline(aes(xintercept=truth2b), color=truecol, linetype=trueltyb)
+  }
+  if (is.null(xbreaks2)) {
+    g.d <- g.d + scale_x_continuous(name=xlab2)
+  } else if (is.null(xlabels2)) {
+    g.d <- g.d + scale_x_continuous(name=xlab2,
+                                    breaks=xbreaks2,
+                                    minor_breaks=NULL,
+                                    expand=expansion(mult=0))
+  } else {
+    g.d <- g.d + scale_x_continuous(name=xlab2,
+                                    breaks=xbreaks2,
+                                    minor_breaks=NULL,
+                                    labels=xlabels2,
+                                    expand=expansion(mult=0))
+  }
+  if (is.null(ylimSE)) {
+    g.d <- g.d + scale_y_continuous(name="ARE (%)")
+  } else {
+    g.d <- g.d + scale_y_continuous(name="ARE (%)",
+                                    limits=ylimARE)
+  }
+  if (!is.null(xtitle2)) {
+    g.d <- g.d + labs(subtitle=bquote("ARE"~"vs."~.(xtitle2)),
+                      tag="D") +
+      theme(plot.subtitle=element_text(hjust=0.5))
+  }
+  
+  ggsave(filename=fileout, 
+         plot=g.a+g.b+g.c+g.d+
+           plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
+         device="eps", width=7, height=7, units="in")
 }
 
-SSmat.names <- c("SSratio.cor","SSratio.ind","SSratio.exch.rhost",
-                 "SSratio.exch.rho0","SSratio.exch.rho1")
-
-Plot.SS.Full <- function(resdf,xlab,xvar,title=NULL,truth=NULL,
-                         ylimit=NULL, colors=SS.cols,
-                         logX=FALSE, truthb=NULL) {
-  if (is.null(ylimit)) {
-    ylimit <- c(floor(min(c(resdf[,SSmat.names]*100,99))),
-                ceiling(max(c(resdf[,SSmat.names]*100,101))))
-  }
-  if (!logX) {
-    xvals <- resdf[,xvar]
-    logval <- ""
-    xaxtval <- NULL
-  } else {
-    xvals <- exp(resdf[,xvar])
-    logval <- "x"
-    if (!is.null(truth)) {
-      truth <- exp(truth)
-    }
-    if (!is.null(truthb)) {
-      truthb <- exp(truthb)
-    }
-    xaxtval <- "n"
-  }
-  plot(x=xvals,y=resdf[,SSmat.names[1]]*100,type="l",col=colors[1],lty=1,lwd=6,
-       xlab=xlab, ylab="Estimated SS/Required SS (%)",
-       ylim=ylimit,
-       main=title, log=logval, xaxt=xaxtval)
-  if (logX) {
-    axis(1, at=c(1/4,1/2,3/4,1,3/2,2,3,4), 
-         labels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"))
-  }
-  lines(x=xvals,y=resdf[,SSmat.names[3]]*100,type="l",col=colors[2],lty=2,lwd=6)
-  lines(x=xvals,y=resdf[,SSmat.names[4]]*100,type="l",col=colors[3],lty=3,lwd=6)
-  lines(x=xvals,y=resdf[,SSmat.names[5]]*100,type="l",col=colors[4],lty=3,lwd=6)
+Plot.SS.single <- function(resdf,xlab,xvar,
+                           title=NULL,truth=NULL,
+                           ylimit=NULL,
+                           xbreaks=NULL, xlabels=NULL,
+                           truecol="red", truelty=2,
+                           linesize=1,
+                           truthb=NULL, trueltyb=2) {
+  tib <- tibble(X=rep(resdf[,xvar],4),
+                Type=factor(rep(c("Corr","rhostar","rho0","rho1"),each=length(resdf[,xvar])),
+                            levels=c("Corr","rhostar","rho0","rho1")),
+                SS.ratio=c(resdf$SSratio.cor,resdf$SSratio.exch.rhost,
+                           resdf$SSratio.exch.rho0,resdf$SSratio.exch.rho1)*100)
+  g <- ggplot(tib,
+              aes(x=X, y=SS.ratio, color=Type, linetype=Type)) +
+    geom_line(size=linesize) +
+    scale_color_manual(name="Correlation Specifications",
+                       values=SS.cols,
+                       labels=c(expression("Correctly Specified"),
+                                expression("Common Exchangeable,"~rho*"*"),
+                                expression("Common Exchangeable,"~rho[0]),
+                                expression("Common Exchangeable,"~rho[1]))) +
+    scale_linetype_manual(name="Correlation Specifications",
+                          values=c(1,4,3,3),
+                          labels=c(expression("Correctly Specified"),
+                                   expression("Common Exchangeable,"~rho*"*"),
+                                   expression("Common Exchangeable,"~rho[0]),
+                                   expression("Common Exchangeable,"~rho[1]))) +
+    theme_light()
   if (!is.null(truth)) {
-    abline(v=truth, col=2, lty=4, lwd=3)
+    g <- g + geom_vline(aes(xintercept=truth), color=truecol, linetype=truelty)
   }
   if (!is.null(truthb)) {
-    abline(v=truthb, col=2, lty=1, lwd=3)
+    g <- g + geom_vline(aes(xintercept=truthb), color=truecol, linetype=trueltyb)
   }
+  if (is.null(xbreaks)) {
+    g <- g + scale_x_continuous(name=xlab)
+  } else if (is.null(xlabels)) {
+    g <- g + scale_x_continuous(name=xlab,
+                                breaks=xbreaks,
+                                minor_breaks=NULL,
+                                expand=expansion(mult=0))
+  } else {
+    g <- g + scale_x_continuous(name=xlab,
+                                breaks=xbreaks,
+                                minor_breaks=NULL,
+                                labels=xlabels,
+                                expand=expansion(mult=0))
+  }
+  if (is.null(ylimit)) {
+    g <- g + scale_y_continuous(name="Estimated SS/Required SS (%)")
+  } else {
+    g <- g + scale_y_continuous(name="Estimated SS/Required SS (%)",
+                                    limits=ylimit)
+  }
+  if (!is.null(title)) {
+    g <- g + labs(subtitle=title) +
+      theme(plot.subtitle=element_text(hjust=0.5))
+  }
+  return(g)
 }
-
 
 #### Sample Size Calculation Parameters ####
 alpha <- 0.05
 power <- 0.80
 
+#### Names of sample size columns ####
+SSmat.names <- c("SSratio.cor","SSratio.ind","SSratio.exch.rhost",
+                 "SSratio.exch.rho0","SSratio.exch.rho1")
 
+###### Main Text Figures ######
 
-###### One Binary Cluster-Level Covariate ######
+### Figure 1 ###
 
-### Varying rho_1 ###
+## Varying ICC ##
 df.VaryRho1 <- data.frame(rho.ratio=seq(from=log(1/4),to=log(4),length.out=len))
 df.VaryRho1$rho1s <- exp(df.VaryRho1$rho.ratio)*icc.ctrlonly
 ResMat <- sapply(X=df.VaryRho1$rho1s,
@@ -295,8 +372,7 @@ ResMat.SS <- sapply(X=df.VaryRho1$rho1s,
 rownames(ResMat.SS) <- SSmat.names 
 df.VaryRho1 <- cbind(df.VaryRho1,t(ResMat.SS))
 
-
-### Varying pi_1 ###
+## Varying Outcome Probability ##
 df.VaryPi1 <- data.frame(pi.ratio=seq(from=log(1/2),to=log(2),length.out=len))
 df.VaryPi1$pi1s <- exp(df.VaryPi1$pi.ratio)*pi.ctrlonly
 ResMat <- sapply(X=df.VaryPi1$pi1s,
@@ -317,18 +393,24 @@ ResMat.SS <- sapply(X=df.VaryPi1$pi1s,
 rownames(ResMat.SS) <- SSmat.names
 df.VaryPi1 <- cbind(df.VaryPi1,t(ResMat.SS))
 
-Plot.Res4(resdf1=df.VaryRho1, resdf2=df.VaryPi1,
-          xlab1=bquote(rho["1"]/rho["0"]), xlab2=bquote(pi["1"]/pi["0"]),
-          xvar1="rho.ratio", xvar2="pi.ratio",
-          xtitle1=bquote("Ratio of"~rho["1"]~"to"~rho["0"]), xtitle2=bquote("Ratio of"~pi["1"]~"to"~pi["0"]),
-          fileout="RhoPiRatios",
-          truth1=log(icc.trt/icc.ctrlonly), truth2=log(pi.trt/pi.ctrlonly),
-          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
-          colors=Res.cols,
-          logX1=TRUE, logX2=TRUE)
+## Plotting Figure 1 ##
+Plot.Res4.gg(resdf1=df.VaryRho1, resdf2=df.VaryPi1,
+             xlab1=bquote(rho["1"]/rho["0"]), xlab2=bquote(pi["1"]/pi["0"]),
+             xtitle1=bquote("Ratio of"~rho["1"]~"to"~rho["0"]), xtitle2=bquote("Ratio of"~pi["1"]~"to"~pi["0"]),
+             xvar1="rho.ratio", xvar2="pi.ratio",
+             fileout="Figure1.eps",
+             xbreaks1=log(c(1/4,1/2,3/4,1,3/2,2,3,4)), 
+             xbreaks2=log(c(1/4,1/2,3/4,1,3/2,2,3,4)),
+             xlabels1=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"), 
+             xlabels2=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+             ylimSE=c(0.075,0.125), ylimARE=c(90,100),
+             truth1=log(icc.trt/icc.ctrlonly), truth2=log(pi.trt/pi.ctrlonly),
+             truecol="red", truelty=2, linesize=1)
 
 
-### Varying Cluster Size CVs ###
+### Figure 2 ###
+
+## Varying Cluster Size CVs ##
 df.VaryCVs <- data.frame(CVs=seq(from=.1,to=.7,length.out=len))
 df.VaryCVs$Vars <- (df.VaryCVs$CVs^2)*(muAdj+1)^2
 nwts <- sapply(X=df.VaryCVs$Vars,
@@ -358,8 +440,7 @@ ResMat.SS <- apply(X=nwts, MARGIN=2,
 rownames(ResMat.SS) <- SSmat.names
 df.VaryCVs <- cbind(df.VaryCVs,t(ResMat.SS))
 
-
-### Varying Cluster Size Means ###
+## Varying Cluster Size Means ##
 df.VaryMeans <- data.frame(Means=seq(from=5,to=20,length.out=len))
 df.VaryMeans$Vars <- (df.VaryMeans$Means*cv)^2
 nwts <- apply(X=as.matrix(df.VaryMeans), MARGIN=1,
@@ -391,62 +472,73 @@ ResMat.SS <- apply(X=nwts, MARGIN=2,
 rownames(ResMat.SS) <- SSmat.names
 df.VaryMeans <- cbind(df.VaryMeans,t(ResMat.SS))
 
-
-Plot.Res4(resdf1=df.VaryMeans, resdf2=df.VaryCVs,
-          xlab1="Mean Cluster Size", xlab2="CV of Cluster Size Distribution",
-          xvar1="Means", xvar2="CVs",
-          xtitle1="Mean Cluster Size", xtitle2="CV of Cluster Size Distribution",
-          fileout="SizeDistn",
-          truth1=mean(ClustSizes), truth2=sqrt(var)/(muAdj+1),
-          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
-          colors=Res.cols)
-
-
-### Sample Size Plotting for Single Covariate Cases ###
-setEPS()
-postscript(file=paste0("SS_Single4.eps"),
-           width=12, height=12, paper="special")
-par(mfrow=c(2,2))
-Plot.SS.Full(resdf=df.VaryRho1,bquote(rho["1"]/rho["0"]), xvar="rho.ratio",
-             title=bquote("a."~"Ratio of "~rho["1"]~"to"~rho["0"]), truth=log(icc.trt/icc.ctrlonly),
-             ylimit=c(80,120), colors=SS.cols, logX=TRUE)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                        expression("Common Exchangeable,"~rho[0]),
-                        expression("Common Exchangeable,"~rho*"*"),
-                        expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df.VaryPi1,bquote(pi["1"]/pi["0"]), xvar="pi.ratio",
-             title=bquote("b."~"Ratio of "~pi["1"]~"to"~pi["0"]), truth=log(pi.trt/pi.ctrlonly),
-             ylimit=c(80,120), colors=SS.cols, logX=TRUE)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df.VaryMeans,xlab=bquote("Mean"~"Cluster Size"), xvar="Means",
-             title=bquote("c."~"Mean Cluster Size"), truth=muAdj+1,
-             ylimit=c(80,120), colors=SS.cols)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df.VaryCVs,xlab=bquote("CV"~"of Cluster Size"), xvar="CVs",
-             title=bquote("d."~"CV of Cluster Size"), truth=sqrt(var)/(muAdj+1),
-             ylimit=c(80,120), colors=SS.cols)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-dev.off()
+## Plotting Figure 2 ##
+Plot.Res4.gg(resdf1=df.VaryMeans, resdf2=df.VaryCVs,
+             xlab1="Mean Cluster Size", xlab2="CV of Cluster Sizes",
+             xtitle1="Mean Cluster Size", xtitle2="CV of Cluster Sizes",
+             xvar1="Means", xvar2="CVs",
+             fileout="Figure2.eps",
+             xbreaks1=seq(5,20,by=5), 
+             xbreaks2=seq(0.1,0.7,by=0.1),
+             xlabels1=NULL, 
+             xlabels2=NULL,
+             ylimSE=c(0.075,0.125), ylimARE=c(90,100),
+             truth1=mean(ClustSizes), truth2=sqrt(var)/(muAdj+1),
+             truecol="red", truelty=2, linesize=1)
 
 
+### Figure 3 ###
 
+g.3.a <- Plot.SS.single(resdf=df.VaryRho1,
+                        xlab=expression(rho[1]/rho[0]),
+                        xvar="rho.ratio",
+                        title=expression("Ratio of"~rho[1]~"to"~rho[0]),
+                        truth=log(icc.trt/icc.ctrlonly),
+                        ylimit=c(80,120),
+                        xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                        xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                        truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="A")
+g.3.b <- Plot.SS.single(resdf=df.VaryPi1,
+                        xlab=expression(pi[1]/pi[0]),
+                        xvar="pi.ratio",
+                        title=expression("Ratio of"~pi[1]~"to"~pi[0]),
+                        truth=log(pi.trt/pi.ctrlonly),
+                        ylimit=c(80,120),
+                        xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                        xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                        truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="B")
+g.3.c <- Plot.SS.single(resdf=df.VaryMeans,
+                        xlab=expression("Mean"~"Cluster Size"),
+                        xvar="Means",
+                        title=expression("Mean Cluster Size"),
+                        truth=muAdj+1,
+                        ylimit=c(80,120),
+                        xbreaks=seq(5,20,by=5),
+                        xlabels=NULL,
+                        truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="C")
+g.3.d <- Plot.SS.single(resdf=df.VaryCVs,
+                        xlab=expression("CV"~"of Cluster Size"),
+                        xvar="CVs",
+                        title=expression("CV of Cluster Sizes"),
+                        truth=sqrt(var)/(muAdj+1),
+                        ylimit=c(80,120),
+                        xbreaks=seq(0.1,0.7,by=0.1),
+                        xlabels=NULL,
+                        truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="D")
+ggsave(filename="Figure3.eps",
+       plot=g.3.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.3.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.3.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.3.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
+       device="eps", width=7, height=7, units="in")
+
+
+##### Supplemental Figures #####
 
 ###### Two Binary Cluster-Level Covariates ######
 
@@ -506,16 +598,21 @@ ResMat.SS <- apply(X=df2.pi.Eratio, MARGIN=1,
 rownames(ResMat.SS) <- SSmat.names
 df2.pi.Eratio <- cbind(df2.pi.Eratio, t(ResMat.SS))
 
-Plot.Res4(resdf1=df2.RhoRatio, resdf2=df2.pi.Eratio,
-          xlab1=bquote(rho["01"]/rho["00"]==rho["11"]/rho["10"]), xlab2=bquote(pi["01"]/pi["00"]==pi["11"]/pi["10"]),
-          xvar1="rho.ratio", xvar2="pi.ratio",
-          xtitle1=bquote("Ratio of"~rho["01"]~"to"~rho["00"]~"and"~rho["11"]~"to"~rho["10"]), xtitle2=bquote("Ratio of"~pi["01"]~"to"~pi["00"]~"and"~pi["11"]~"to"~pi["10"]),
-          fileout="2_RhoPiRatios",
-          truth1=log(icc.Eratio), truth2=log(pi.Eratio),
-          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
-          colors=Res.cols,
-          logX1=TRUE, logX2=TRUE,
-          truth1b=log(icc.ctrl.E1/icc.ctrl.E0), truth2b=log(pi.ctrl.E1/pi.ctrl.E0))
+Plot.Res4.gg(resdf1=df2.RhoRatio, resdf2=df2.pi.Eratio,
+             xlab1=bquote(rho["01"]/rho["00"]==rho["11"]/rho["10"]),
+             xlab2=bquote(pi["01"]/pi["00"]==pi["11"]/pi["10"]),
+             xtitle1=bquote("Ratio of"~rho["01"]~"to"~rho["00"]~"and"~rho["11"]~"to"~rho["10"]), 
+             xtitle2=bquote("Ratio of"~pi["01"]~"to"~pi["00"]~"and"~pi["11"]~"to"~pi["10"]),
+             xvar1="rho.ratio", xvar2="pi.ratio",
+             fileout="FigureS1.eps",
+             xbreaks1=log(c(1/4,1/2,3/4,1,3/2,2,3,4)), 
+             xbreaks2=log(c(1/4,1/2,3/4,1,3/2,2,3,4)),
+             xlabels1=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"), 
+             xlabels2=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+             ylimSE=c(0.075,0.125), ylimARE=c(90,100),
+             truth1=log(icc.Eratio), truth2=log(pi.Eratio),
+             truecol="red", truelty=2, linesize=1, 
+             truth1b=log(icc.ctrl.E1/icc.ctrl.E0), truth2b=log(pi.ctrl.E1/pi.ctrl.E0), trueltyb=5)
 
 
 ### Varying Cluster Size CV ###
@@ -582,60 +679,68 @@ ResMat.SS <- apply(X=nwts, MARGIN=2,
 rownames(ResMat.SS) <- SSmat.names
 df2.VaryMeans <- cbind(df2.VaryMeans,t(ResMat.SS))
 
-Plot.Res4(resdf1=df2.VaryMeans, resdf2=df2.VaryCVs,
-          xlab1="Mean Cluster Size", xlab2="CV of Cluster Size Distribution",
-          xvar1="truemeans", xvar2="trueCVs",
-          xtitle1="Mean Cluster Size", xtitle2="CV of Cluster Size Distribution",
-          fileout="2_SizeDistn",
-          truth1=mean(ClustSizes), truth2=sqrt(var)/(muAdj+1),
-          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
-          colors=Res.cols)
+Plot.Res4.gg(resdf1=df2.VaryMeans, resdf2=df2.VaryCVs,
+             xlab1="Mean Cluster Size", xlab2="CV of Cluster Sizes",
+             xtitle1="Mean Cluster Size", xtitle2="CV of Cluster Sizes",
+             xvar1="truemeans", xvar2="trueCVs",
+             fileout="FigureS2.eps",
+             xbreaks1=seq(5,20,by=5), 
+             xbreaks2=seq(0.1,0.7,by=0.1),
+             xlabels1=NULL, 
+             xlabels2=NULL,
+             ylimSE=c(0.075,0.125), ylimARE=c(90,100),
+             truth1=mean(ClustSizes), sqrt(var)/(muAdj+1),
+             truecol="red", truelty=2, linesize=1)
 
 
 ### Sample Size Plotting for Two Covariate Cases ###
-setEPS()
-postscript(file=paste0("SS_2Covar4.eps"),
-           width=12, height=12, paper="special")
-par(mfrow=c(2,2))
-Plot.SS.Full(resdf=df2.RhoRatio,bquote(rho["01"]/rho["00"]==rho["11"]/rho["10"]), xvar="rho.ratio",
-             title=bquote("a."~"Ratio of"~rho["01"]~"to"~rho["00"]~"and"~rho["11"]~"to"~rho["10"]),
-             truth=log(icc.Eratio),
-             ylimit=c(80,120), colors=SS.cols, logX=TRUE, truthb=log(icc.ctrl.E1/icc.ctrl.E0))
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df2.pi.Eratio,bquote(pi["01"]/pi["00"]==pi["11"]/pi["10"]), xvar="pi.ratio",
-        title=bquote("b."~"Ratio of"~pi["01"]~"to"~pi["00"]~"and"~pi["11"]~"to"~pi["10"]),
-        truth=log(pi.Eratio),
-        ylimit=c(80,120), colors=SS.cols, logX=TRUE, truthb=log(pi.ctrl.E1/pi.ctrl.E0))
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df2.VaryMeans,xlab=bquote("Mean"~"Cluster Size"), xvar="truemeans",
-        title=bquote("c."~"Mean Cluster Size"), truth=mean(ClustSizes),
-        ylimit=c(80,120), colors=SS.cols)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df2.VaryCVs,xlab=bquote("CV"~"of Cluster Size Distribution"), xvar="trueCVs",
-        title=bquote("d."~"CV of Cluster Size Distribution"), truth=sqrt(var)/(muAdj+1),
-        ylimit=c(80,120), colors=SS.cols)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-dev.off()
+g.s7.a <- Plot.SS.single(resdf=df2.RhoRatio,
+                         xlab=bquote(rho["01"]/rho["00"]==rho["11"]/rho["10"]),
+                         xvar="rho.ratio",
+                         title=bquote("Ratio of"~rho["01"]~"to"~rho["00"]~"and"~rho["11"]~"to"~rho["10"]),
+                         truth=log(icc.Eratio),
+                         ylimit=c(80,120),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5,
+                         truthb=log(icc.ctrl.E1/icc.ctrl.E0), trueltyb=5) +
+  labs(tag="A")
+g.s7.b <- Plot.SS.single(resdf=df2.pi.Eratio,
+                         xlab=bquote(pi["01"]/pi["00"]==pi["11"]/pi["10"]),
+                         xvar="pi.ratio",
+                         title=bquote("Ratio of"~pi["01"]~"to"~pi["00"]~"and"~pi["11"]~"to"~pi["10"]),
+                         truth=log(pi.Eratio),
+                         ylimit=c(80,120),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5,
+                         truthb=log(pi.ctrl.E1/pi.ctrl.E0), trueltyb=5) +
+  labs(tag="B")
+g.s7.c <- Plot.SS.single(resdf=df2.VaryMeans,
+                         xlab=bquote("Mean"~"Cluster Size"),
+                         xvar="truemeans",
+                         title=bquote("Mean Cluster Size"),
+                         truth=mean(ClustSizes),
+                         ylimit=c(80,120),
+                         xbreaks=seq(5,20,by=5),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="C")
+g.s7.d <- Plot.SS.single(resdf=df2.VaryCVs,
+                         xlab=bquote("CV"~"of Cluster Sizes"),
+                         xvar="trueCVs",
+                         title=bquote("CV of Cluster Sizes"),
+                         truth=sqrt(var)/(muAdj+1),
+                         ylimit=c(80,120),
+                         xbreaks=seq(0.1,0.7,by=0.1),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="D")
+ggsave(filename="FigureS7.eps",
+       plot=g.s7.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.s7.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.s7.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.s7.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
+       device="eps", width=7, height=7, units="in")
 
 
 ###### Varying Parameters Differentially Between Arms ######
@@ -695,14 +800,19 @@ ResMat.SS0 <- apply(X=df2.RhoArm0, MARGIN=1,
 rownames(ResMat.SS0) <- SSmat.names
 df2.RhoArm0 <- cbind(df2.RhoArm0, t(ResMat.SS0))
 
-Plot.Res4(resdf1=df2.RhoArm0, resdf2=df2.RhoArm1,
-          xlab1=bquote(rho["01"]/rho["00"]), xlab2=bquote(rho["11"]/rho["10"]),
-          xvar1="rho.ratio", xvar2="rho.ratio",
-          xtitle1=bquote("Ratio of"~rho["01"]~"to"~rho["00"]), xtitle2=bquote("Ratio of"~rho["11"]~"to"~rho["10"]),
-          fileout="2_ArmsRhoRatio",
-          truth1=log(icc.ctrl.E1/icc.ctrl.E0), truth2=log(icc.trt.E1/icc.trt.E0),
-          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
-          colors=Res.cols, logX1=TRUE, logX2=TRUE)
+Plot.Res4.gg(resdf1=df2.RhoArm0, resdf2=df2.RhoArm1,
+             xlab1=bquote(rho["01"]/rho["00"]), xlab2=bquote(rho["11"]/rho["10"]),
+             xtitle1=bquote("Ratio of"~rho["01"]~"to"~rho["00"]), 
+             xtitle2=bquote("Ratio of"~rho["11"]~"to"~rho["10"]),
+             xvar1="rho.ratio", xvar2="rho.ratio",
+             fileout="FigureS3.eps",
+             xbreaks1=log(c(1/4,1/2,3/4,1,3/2,2,3,4)), 
+             xbreaks2=log(c(1/4,1/2,3/4,1,3/2,2,3,4)),
+             xlabels1=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"), 
+             xlabels2=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+             ylimSE=c(0.075,0.125), ylimARE=c(90,100),
+             truth1=log(icc.ctrl.E1/icc.ctrl.E0), truth2=log(icc.trt.E1/icc.trt.E0),
+             truecol="red", truelty=2, linesize=1)
 
 
 ### Varying Ratio of Pis due to Electrification Differentially ###
@@ -760,14 +870,19 @@ ResMat.SS0 <- apply(X=df2.PiArm0, MARGIN=1,
 rownames(ResMat.SS0) <- SSmat.names
 df2.PiArm0 <- cbind(df2.PiArm0, t(ResMat.SS0))
 
-Plot.Res4(resdf1=df2.PiArm0, resdf2=df2.PiArm1,
-          xlab1=bquote(pi["01"]/pi["00"]), xlab2=bquote(pi["11"]/pi["10"]),
-          xvar1="pi.ratio", xvar2="pi.ratio",
-          xtitle1=bquote("Ratio of"~pi["01"]~"to"~pi["00"]), xtitle2=bquote("Ratio of"~pi["11"]~"to"~pi["10"]),
-          fileout="2_ArmsPiRatio",
-          truth1=log(pi.ctrl.E1/pi.ctrl.E0), truth2=log(pi.trt.E1/pi.trt.E0),
-          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
-          colors=Res.cols, logX1=TRUE, logX2=TRUE)
+Plot.Res4.gg(resdf1=df2.PiArm0, resdf2=df2.PiArm1,
+             xlab1=bquote(pi["01"]/pi["00"]), xlab2=bquote(pi["11"]/pi["10"]),
+             xtitle1=bquote("Ratio of"~pi["01"]~"to"~pi["00"]), 
+             xtitle2=bquote("Ratio of"~pi["11"]~"to"~pi["10"]),
+             xvar1="pi.ratio", xvar2="pi.ratio",
+             fileout="FigureS4.eps",
+             xbreaks1=log(c(1/4,1/2,3/4,1,3/2,2,3,4)), 
+             xbreaks2=log(c(1/4,1/2,3/4,1,3/2,2,3,4)),
+             xlabels1=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"), 
+             xlabels2=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+             ylimSE=c(0.075,0.125), ylimARE=c(90,100),
+             truth1=log(pi.ctrl.E1/pi.ctrl.E0), truth2=log(pi.trt.E1/pi.trt.E0),
+             truecol="red", truelty=2, linesize=1)
 
 
 ### Varying Mean Cluster Size Differentially ###
@@ -825,14 +940,20 @@ ResMat.SS0 <- apply(X=nwtsVary, MARGIN=2,
 rownames(ResMat.SS0) <- SSmat.names
 df2.VaryE0 <- cbind(df2.VaryE0, t(ResMat.SS0))
 
-Plot.Res4(resdf1=df2.VaryE0, resdf2=df2.VaryE1,
-          xlab1=bquote("Mean Cluster Size when"~Z["2i"]==0), xlab2=bquote("Mean Cluster Size when"~Z["2i"]==1),
-          xvar1="truemeans", xvar2="truemeans",
-          xtitle1=bquote("Mean Cluster Size when"~Z["2i"]==0), xtitle2=bquote("Mean Cluster Size when"~Z["2i"]==1),
-          fileout="2_EsSizeMeans",
-          truth1=muAdj+1, truth2=muAdj+1,
-          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
-          colors=Res.cols)
+Plot.Res4.gg(resdf1=df2.VaryE0, resdf2=df2.VaryE1,
+             xlab1=bquote("Mean Cluster Size when"~Z["2i"]==0), 
+             xlab2=bquote("Mean Cluster Size when"~Z["2i"]==1),
+             xtitle1=bquote("Mean Cluster Size when"~Z["2i"]==0), 
+             xtitle2=bquote("Mean Cluster Size when"~Z["2i"]==1),
+             xvar1="truemeans", xvar2="truemeans",
+             fileout="FigureS5.eps",
+             xbreaks1=seq(5,20,by=5), 
+             xbreaks2=seq(5,20,by=5), 
+             xlabels1=NULL, 
+             xlabels2=NULL,
+             ylimSE=c(0.075,0.125), ylimARE=c(90,100),
+             truth1=muAdj+1, truth2=muAdj+1,
+             truecol="red", truelty=2, linesize=1)
 
 
 ### Varying Cluster Size CV Differentially ###
@@ -886,107 +1007,116 @@ ResMat.SS0 <- apply(X=nwtsVaryCV, MARGIN=2,
 rownames(ResMat.SS0) <- SSmat.names
 df2.VaryE0CV <- cbind(df2.VaryE0CV, t(ResMat.SS0))
 
-Plot.Res4(resdf1=df2.VaryE0CV, resdf2=df2.VaryE1CV,
-          xlab1=bquote("CV of Cluster Size Distribution when"~Z["1i"]==0),
-          xlab2=bquote("CV of Cluster Size Distribution when"~Z["1i"]==1),
-          xvar1="trueCVs", xvar2="trueCVs",
-          xtitle1=bquote("CV of Cluster Size Distribution when"~Z["1i"]==0),
-          xtitle2=bquote("CV of Cluster Size Distribution when"~Z["1i"]==1),
-          fileout="2_EsSizeCVs",
-          truth1=cv, truth2=cv,
-          ylimit1=c(0.075,0.125), ylimit2=c(85,100),
-          colors=Res.cols)
+Plot.Res4.gg(resdf1=df2.VaryE0CV, resdf2=df2.VaryE1CV,
+             xlab1=bquote("CV of Cluster Sizes when"~Z["2i"]==0),
+             xlab2=bquote("CV of Cluster Sizes when"~Z["2i"]==1),
+             xtitle1=bquote("CV of Cluster Sizes when"~Z["2i"]==0),
+             xtitle2=bquote("CV of Cluster Sizes when"~Z["2i"]==1),
+             xvar1="trueCVs", xvar2="trueCVs",
+             fileout="FigureS6.eps",
+             xbreaks1=seq(0.1,0.7,by=0.1), 
+             xbreaks2=seq(0.1,0.7,by=0.1),
+             xlabels1=NULL, 
+             xlabels2=NULL,
+             ylimSE=c(0.075,0.125), ylimARE=c(90,100),
+             truth1=cv, truth2=cv,
+             truecol="red", truelty=2, linesize=1)
 
 ### Sample Size Plotting for Differentially Varying ###
 ### Rho and Pi Ratios Between Treatment Arms ###
-setEPS()
-postscript(file=paste0("SS_2CovarArmsRatios.eps"),
-           width=12, height=12, paper="special")
-par(mfrow=c(2,2))
-Plot.SS.Full(resdf=df2.RhoArm0,bquote(rho["01"]/rho["00"]), xvar="rho.ratio",
-             title=bquote("a."~"Ratio of"~rho["01"]~"to"~rho["00"]),
-             truth=log(icc.ctrl.E1/icc.ctrl.E0),
-             ylimit=c(80,120), colors=SS.cols, logX=TRUE)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df2.RhoArm1,bquote(rho["11"]/rho["10"]), xvar="rho.ratio",
-             title=bquote("b."~"Ratio of"~rho["11"]~"to"~rho["10"]),
-             truth=log(icc.trt.E1/icc.trt.E0),
-             ylimit=c(80,120), colors=SS.cols, logX=TRUE)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df2.PiArm0,bquote(pi["01"]/pi["00"]), xvar="pi.ratio",
-             title=bquote("c."~"Ratio of"~pi["01"]~"to"~pi["00"]),
-             truth=log(pi.ctrl.E1/pi.ctrl.E0),
-             ylimit=c(80,120), colors=SS.cols, logX=TRUE)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df2.PiArm1,bquote(pi["11"]/pi["10"]), xvar="pi.ratio",
-             title=bquote("d."~"Ratio of"~pi["11"]~"to"~pi["10"]),
-             truth=log(pi.trt.E1/pi.trt.E0),
-             ylimit=c(80,120), colors=SS.cols, logX=TRUE)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-dev.off()
+g.s8.a <- Plot.SS.single(resdf=df2.RhoArm0,
+                         xlab=bquote(rho["01"]/rho["00"]),
+                         xvar="rho.ratio",
+                         title=bquote("Ratio of"~rho["01"]~"to"~rho["00"]),
+                         truth=log(icc.ctrl.E1/icc.ctrl.E0),
+                         ylimit=c(80,120),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="A")
+g.s8.b <- Plot.SS.single(resdf=df2.RhoArm1,
+                         xlab=bquote(rho["11"]/rho["10"]),
+                         xvar="rho.ratio",
+                         title=bquote("Ratio of"~rho["11"]~"to"~rho["10"]),
+                         truth=log(icc.trt.E1/icc.trt.E0),
+                         ylimit=c(80,120),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="B")
+g.s8.c <- Plot.SS.single(resdf=df2.PiArm0,
+                         xlab=bquote(pi["01"]/pi["00"]),
+                         xvar="pi.ratio",
+                         title=bquote("Ratio of"~pi["01"]~"to"~pi["00"]),
+                         truth=log(pi.ctrl.E1/pi.ctrl.E0),
+                         ylimit=c(80,120),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="C")
+g.s8.d <- Plot.SS.single(resdf=df2.PiArm1,
+                         xlab=bquote(pi["11"]/pi["10"]),
+                         xvar="pi.ratio",
+                         title=bquote("Ratio of"~pi["11"]~"to"~pi["10"]),
+                         truth=log(pi.trt.E1/pi.trt.E0),
+                         ylimit=c(80,120),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="D")
+ggsave(filename="FigureS8.eps",
+       plot=g.s8.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.s8.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.s8.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.s8.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
+       device="eps", width=7, height=7, units="in")
+
 
 ### Sample Size Plotting for Differentially Varying ###
 ### Cluster Size Distribution Between High- and Low-Electrification Clusters ###
-setEPS()
-postscript(file=paste0("SS_2CovarEsSize.eps"),
-           width=12, height=12, paper="special")
-par(mfrow=c(2,2))
-Plot.SS.Full(resdf=df2.VaryE0,xlab=bquote("Mean Cluster Size when"~Z["2i"]==0),
-             xvar="truemeans", title=bquote("a."~"Mean Cluster Size when"~Z["2i"]==0),
-             truth=muAdj+1, ylimit=c(80,120), colors=SS.cols)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df2.VaryE1,xlab=bquote("Mean Cluster Size when"~Z["2i"]==1),
-             xvar="truemeans", title=bquote("b."~"Mean Cluster Size when"~Z["2i"]==1),
-             truth=muAdj+1, ylimit=c(80,120), colors=SS.cols)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df2.VaryE0CV,xlab=bquote("CV of Cluster Size Distribution when"~Z["2i"]==0),
-             xvar="trueCVs", title=bquote("c."~"CV of Cluster Size Distribution when"~Z["2i"]==0),
-             truth=cv, ylimit=c(80,120), colors=SS.cols)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-Plot.SS.Full(resdf=df2.VaryE1CV,xlab=bquote("CV of Cluster Size Distribution when"~Z["2i"]==1),
-             xvar="trueCVs", title=bquote("d."~"CV of Cluster Size Distribution when"~Z["2i"]==1),
-             truth=cv, ylimit=c(80,120), colors=SS.cols)
-legend(x="bottom",legend=c(expression("Correctly Specified"),
-                           expression("Common Exchangeable,"~rho[0]),
-                           expression("Common Exchangeable,"~rho*"*"),
-                           expression("Common Exchangeable,"~rho[1])),
-       col=SS.cols[c(1,3,2,4)], lty=c(1,3,2,3), lwd=rep(3,3), cex=1, bg="white",
-       ncol=2)
-dev.off()
+g.s9.a <- Plot.SS.single(resdf=df2.VaryE0,
+                         xlab=bquote("Mean Cluster Size when"~Z["2i"]==0),
+                         xvar="truemeans",
+                         title=bquote("Mean Cluster Size when"~Z["2i"]==0),
+                         truth=mean(ClustSizes),
+                         ylimit=c(80,120),
+                         xbreaks=seq(5,20,by=5),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="A")
+g.s9.b <- Plot.SS.single(resdf=df2.VaryE1,
+                         xlab=bquote("Mean Cluster Size when"~Z["2i"]==1),
+                         xvar="truemeans",
+                         title=bquote("Mean Cluster Size when"~Z["2i"]==1),
+                         truth=mean(ClustSizes),
+                         ylimit=c(80,120),
+                         xbreaks=seq(5,20,by=5),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="B")
+g.s9.c <- Plot.SS.single(resdf=df2.VaryE0CV,
+                         xlab=bquote("CV of Cluster Sizes when"~Z["2i"]==0),
+                         xvar="trueCVs",
+                         title=bquote("CV of Cluster Sizes when"~Z["2i"]==0),
+                         truth=sqrt(var)/(muAdj+1),
+                         ylimit=c(80,120),
+                         xbreaks=seq(0.1,0.7,by=0.1),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="C")
+g.s9.d <- Plot.SS.single(resdf=df2.VaryE1CV,
+                         xlab=bquote("CV of Cluster Sizes when"~Z["2i"]==1),
+                         xvar="trueCVs",
+                         title=bquote("CV of Cluster Sizes when"~Z["2i"]==1),
+                         truth=sqrt(var)/(muAdj+1),
+                         ylimit=c(80,120),
+                         xbreaks=seq(0.1,0.7,by=0.1),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="D")
+ggsave(filename="FigureS9.eps",
+       plot=g.s9.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.s9.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.s9.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.s9.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
+       device="eps", width=7, height=7, units="in")
 
 
