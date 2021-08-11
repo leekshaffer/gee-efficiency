@@ -83,7 +83,9 @@ length(unique(Trt$clusterid[Trt$ElecBin==1]))
 len <- 401 #Length of vectors to generate plot lines (higher means more resolution)
 
 Res.cols <- c(1,"#1f78b4","#a6cee3")
-SS.cols <- c(1,"#bae4b3","#756bb1","#54278f")
+# SS.cols <- c(1,"#bae4b3","#756bb1","#54278f")
+
+SS.cols <- c(1,"#bae4b3","#8b5a8f","#3a1b64")
 
 Plot.Res4.gg <- function(resdf1,resdf2,xlab1,xlab2,
                          xtitle1,xtitle2,
@@ -339,13 +341,76 @@ Plot.SS.single <- function(resdf,xlab,xvar,
   return(g)
 }
 
+Plot.Pwr.single <- function(resdf,xlab,xvar,
+                           title=NULL,truth=NULL,
+                           ylimit=NULL,
+                           xbreaks=NULL, xlabels=NULL,
+                           truecol="red", truelty=2,
+                           linesize=1,
+                           truthb=NULL, trueltyb=2) {
+  tib <- tibble(X=rep(resdf[,xvar],4),
+                Type=factor(rep(c("Corr","rhostar","rho0","rho1"),each=length(resdf[,xvar])),
+                            levels=c("Corr","rhostar","rho0","rho1")),
+                SS.ratio=c(resdf$Pwr.cor,resdf$Pwr.exch.rhost,
+                           resdf$Pwr.exch.rho0,resdf$Pwr.exch.rho1)*100)
+  g <- ggplot(tib,
+              aes(x=X, y=SS.ratio, color=Type, linetype=Type)) +
+    geom_line(size=linesize) +
+    scale_color_manual(name="Correlation Specifications",
+                       values=SS.cols,
+                       labels=c(expression("Correctly Specified"),
+                                expression("Common Exchangeable,"~rho*"*"),
+                                expression("Common Exchangeable,"~rho[0]),
+                                expression("Common Exchangeable,"~rho[1]))) +
+    scale_linetype_manual(name="Correlation Specifications",
+                          values=c(1,4,3,3),
+                          labels=c(expression("Correctly Specified"),
+                                   expression("Common Exchangeable,"~rho*"*"),
+                                   expression("Common Exchangeable,"~rho[0]),
+                                   expression("Common Exchangeable,"~rho[1]))) +
+    theme_light()
+  if (!is.null(truth)) {
+    g <- g + geom_vline(aes(xintercept=truth), color=truecol, linetype=truelty)
+  }
+  if (!is.null(truthb)) {
+    g <- g + geom_vline(aes(xintercept=truthb), color=truecol, linetype=trueltyb)
+  }
+  if (is.null(xbreaks)) {
+    g <- g + scale_x_continuous(name=xlab)
+  } else if (is.null(xlabels)) {
+    g <- g + scale_x_continuous(name=xlab,
+                                breaks=xbreaks,
+                                minor_breaks=NULL,
+                                expand=expansion(mult=0))
+  } else {
+    g <- g + scale_x_continuous(name=xlab,
+                                breaks=xbreaks,
+                                minor_breaks=NULL,
+                                labels=xlabels,
+                                expand=expansion(mult=0))
+  }
+  if (is.null(ylimit)) {
+    g <- g + scale_y_continuous(name="Power Using Estimated SS (%)")
+  } else {
+    g <- g + scale_y_continuous(name="Power Using Estimated SS (%)",
+                                limits=ylimit)
+  }
+  if (!is.null(title)) {
+    g <- g + labs(subtitle=title) +
+      theme(plot.subtitle=element_text(hjust=0.5))
+  }
+  return(g)
+}
+
 #### Sample Size Calculation Parameters ####
 alpha <- 0.05
 power <- 0.80
 
 #### Names of sample size columns ####
 SSmat.names <- c("SSratio.cor","SSratio.ind","SSratio.exch.rhost",
-                 "SSratio.exch.rho0","SSratio.exch.rho1")
+                 "SSratio.exch.rho0","SSratio.exch.rho1",
+                 "Pwr.cor","Pwr.ind","Pwr.exch.rhost",
+                 "Pwr.exch.rho0","Pwr.exch.rho1")
 
 ###### Main Text Figures ######
 
@@ -487,44 +552,44 @@ Plot.Res4.gg(resdf1=df.VaryMeans, resdf2=df.VaryCVs,
              truecol="red", truelty=2, linesize=1)
 
 
-### Figure 3 ###
+### Figure 3 — Power Version###
 
-g.3.a <- Plot.SS.single(resdf=df.VaryRho1,
+g.3.a <- Plot.Pwr.single(resdf=df.VaryRho1,
                         xlab=expression(rho[1]/rho[0]),
                         xvar="rho.ratio",
                         title=expression("Ratio of"~rho[1]~"to"~rho[0]),
                         truth=log(icc.trt/icc.ctrlonly),
-                        ylimit=c(80,120),
+                        ylimit=c(60,100),
                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
                         truecol="red", truelty=2, linesize=1.5) +
   labs(tag="A")
-g.3.b <- Plot.SS.single(resdf=df.VaryPi1,
+g.3.b <- Plot.Pwr.single(resdf=df.VaryPi1,
                         xlab=expression(pi[1]/pi[0]),
                         xvar="pi.ratio",
                         title=expression("Ratio of"~pi[1]~"to"~pi[0]),
                         truth=log(pi.trt/pi.ctrlonly),
-                        ylimit=c(80,120),
+                        ylimit=c(60,100),
                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
                         truecol="red", truelty=2, linesize=1.5) +
   labs(tag="B")
-g.3.c <- Plot.SS.single(resdf=df.VaryMeans,
+g.3.c <- Plot.Pwr.single(resdf=df.VaryMeans,
                         xlab=expression("Mean"~"Cluster Size"),
                         xvar="Means",
                         title=expression("Mean Cluster Size"),
                         truth=muAdj+1,
-                        ylimit=c(80,120),
+                        ylimit=c(60,100),
                         xbreaks=seq(5,20,by=5),
                         xlabels=NULL,
                         truecol="red", truelty=2, linesize=1.5) +
   labs(tag="C")
-g.3.d <- Plot.SS.single(resdf=df.VaryCVs,
+g.3.d <- Plot.Pwr.single(resdf=df.VaryCVs,
                         xlab=expression("CV"~"of Cluster Size"),
                         xvar="CVs",
                         title=expression("CV of Cluster Sizes"),
                         truth=sqrt(var)/(muAdj+1),
-                        ylimit=c(80,120),
+                        ylimit=c(60,100),
                         xbreaks=seq(0.1,0.7,by=0.1),
                         xlabels=NULL,
                         truecol="red", truelty=2, linesize=1.5) +
@@ -539,6 +604,56 @@ ggsave(filename="Figure3.eps",
 
 
 ##### Supplemental Figures #####
+
+### Figure D-1 ###
+
+g.d1.a <- Plot.SS.single(resdf=df.VaryRho1,
+                        xlab=expression(rho[1]/rho[0]),
+                        xvar="rho.ratio",
+                        title=expression("Ratio of"~rho[1]~"to"~rho[0]),
+                        truth=log(icc.trt/icc.ctrlonly),
+                        ylimit=c(80,120),
+                        xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                        xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                        truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="A")
+g.d1.b <- Plot.SS.single(resdf=df.VaryPi1,
+                        xlab=expression(pi[1]/pi[0]),
+                        xvar="pi.ratio",
+                        title=expression("Ratio of"~pi[1]~"to"~pi[0]),
+                        truth=log(pi.trt/pi.ctrlonly),
+                        ylimit=c(80,120),
+                        xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                        xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                        truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="B")
+g.d2.c <- Plot.SS.single(resdf=df.VaryMeans,
+                        xlab=expression("Mean"~"Cluster Size"),
+                        xvar="Means",
+                        title=expression("Mean Cluster Size"),
+                        truth=muAdj+1,
+                        ylimit=c(80,120),
+                        xbreaks=seq(5,20,by=5),
+                        xlabels=NULL,
+                        truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="C")
+g.d3.d <- Plot.SS.single(resdf=df.VaryCVs,
+                        xlab=expression("CV"~"of Cluster Size"),
+                        xvar="CVs",
+                        title=expression("CV of Cluster Sizes"),
+                        truth=sqrt(var)/(muAdj+1),
+                        ylimit=c(80,120),
+                        xbreaks=seq(0.1,0.7,by=0.1),
+                        xlabels=NULL,
+                        truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="D")
+ggsave(filename="FigureD1.eps",
+       plot=g.d1.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d2.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d3.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d4.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
+       device="eps", width=7, height=7, units="in")
 
 ###### Two Binary Cluster-Level Covariates ######
 
@@ -604,7 +719,7 @@ Plot.Res4.gg(resdf1=df2.RhoRatio, resdf2=df2.pi.Eratio,
              xtitle1=bquote("Ratio of"~rho["01"]~"to"~rho["00"]~"and"~rho["11"]~"to"~rho["10"]), 
              xtitle2=bquote("Ratio of"~pi["01"]~"to"~pi["00"]~"and"~pi["11"]~"to"~pi["10"]),
              xvar1="rho.ratio", xvar2="pi.ratio",
-             fileout="FigureS1.eps",
+             fileout="FigureC1.eps",
              xbreaks1=log(c(1/4,1/2,3/4,1,3/2,2,3,4)), 
              xbreaks2=log(c(1/4,1/2,3/4,1,3/2,2,3,4)),
              xlabels1=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"), 
@@ -683,7 +798,7 @@ Plot.Res4.gg(resdf1=df2.VaryMeans, resdf2=df2.VaryCVs,
              xlab1="Mean Cluster Size", xlab2="CV of Cluster Sizes",
              xtitle1="Mean Cluster Size", xtitle2="CV of Cluster Sizes",
              xvar1="truemeans", xvar2="trueCVs",
-             fileout="FigureS2.eps",
+             fileout="FigureC2.eps",
              xbreaks1=seq(5,20,by=5), 
              xbreaks2=seq(0.1,0.7,by=0.1),
              xlabels1=NULL, 
@@ -693,8 +808,56 @@ Plot.Res4.gg(resdf1=df2.VaryMeans, resdf2=df2.VaryCVs,
              truecol="red", truelty=2, linesize=1)
 
 
-### Sample Size Plotting for Two Covariate Cases ###
-g.s7.a <- Plot.SS.single(resdf=df2.RhoRatio,
+### Power and Sample Size Plotting for Two Covariate Cases ###
+g.c7.a <- Plot.Pwr.single(resdf=df2.RhoRatio,
+                         xlab=bquote(rho["01"]/rho["00"]==rho["11"]/rho["10"]),
+                         xvar="rho.ratio",
+                         title=bquote("Ratio of"~rho["01"]~"to"~rho["00"]~"and"~rho["11"]~"to"~rho["10"]),
+                         truth=log(icc.Eratio),
+                         ylimit=c(60,100),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5,
+                         truthb=log(icc.ctrl.E1/icc.ctrl.E0), trueltyb=5) +
+  labs(tag="A")
+g.c7.b <- Plot.Pwr.single(resdf=df2.pi.Eratio,
+                         xlab=bquote(pi["01"]/pi["00"]==pi["11"]/pi["10"]),
+                         xvar="pi.ratio",
+                         title=bquote("Ratio of"~pi["01"]~"to"~pi["00"]~"and"~pi["11"]~"to"~pi["10"]),
+                         truth=log(pi.Eratio),
+                         ylimit=c(60,100),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5,
+                         truthb=log(pi.ctrl.E1/pi.ctrl.E0), trueltyb=5) +
+  labs(tag="B")
+g.c7.c <- Plot.Pwr.single(resdf=df2.VaryMeans,
+                         xlab=bquote("Mean"~"Cluster Size"),
+                         xvar="truemeans",
+                         title=bquote("Mean Cluster Size"),
+                         truth=mean(ClustSizes),
+                         ylimit=c(60,100),
+                         xbreaks=seq(5,20,by=5),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="C")
+g.c7.d <- Plot.Pwr.single(resdf=df2.VaryCVs,
+                         xlab=bquote("CV"~"of Cluster Sizes"),
+                         xvar="trueCVs",
+                         title=bquote("CV of Cluster Sizes"),
+                         truth=sqrt(var)/(muAdj+1),
+                         ylimit=c(60,100),
+                         xbreaks=seq(0.1,0.7,by=0.1),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="D")
+ggsave(filename="FigureC7.eps",
+       plot=g.c7.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.c7.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.c7.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.c7.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
+       device="eps", width=7, height=7, units="in")
+
+g.d2.a <- Plot.SS.single(resdf=df2.RhoRatio,
                          xlab=bquote(rho["01"]/rho["00"]==rho["11"]/rho["10"]),
                          xvar="rho.ratio",
                          title=bquote("Ratio of"~rho["01"]~"to"~rho["00"]~"and"~rho["11"]~"to"~rho["10"]),
@@ -705,7 +868,7 @@ g.s7.a <- Plot.SS.single(resdf=df2.RhoRatio,
                          truecol="red", truelty=2, linesize=1.5,
                          truthb=log(icc.ctrl.E1/icc.ctrl.E0), trueltyb=5) +
   labs(tag="A")
-g.s7.b <- Plot.SS.single(resdf=df2.pi.Eratio,
+g.d2.b <- Plot.SS.single(resdf=df2.pi.Eratio,
                          xlab=bquote(pi["01"]/pi["00"]==pi["11"]/pi["10"]),
                          xvar="pi.ratio",
                          title=bquote("Ratio of"~pi["01"]~"to"~pi["00"]~"and"~pi["11"]~"to"~pi["10"]),
@@ -716,7 +879,7 @@ g.s7.b <- Plot.SS.single(resdf=df2.pi.Eratio,
                          truecol="red", truelty=2, linesize=1.5,
                          truthb=log(pi.ctrl.E1/pi.ctrl.E0), trueltyb=5) +
   labs(tag="B")
-g.s7.c <- Plot.SS.single(resdf=df2.VaryMeans,
+g.d2.c <- Plot.SS.single(resdf=df2.VaryMeans,
                          xlab=bquote("Mean"~"Cluster Size"),
                          xvar="truemeans",
                          title=bquote("Mean Cluster Size"),
@@ -725,7 +888,7 @@ g.s7.c <- Plot.SS.single(resdf=df2.VaryMeans,
                          xbreaks=seq(5,20,by=5),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="C")
-g.s7.d <- Plot.SS.single(resdf=df2.VaryCVs,
+g.d2.d <- Plot.SS.single(resdf=df2.VaryCVs,
                          xlab=bquote("CV"~"of Cluster Sizes"),
                          xvar="trueCVs",
                          title=bquote("CV of Cluster Sizes"),
@@ -734,11 +897,11 @@ g.s7.d <- Plot.SS.single(resdf=df2.VaryCVs,
                          xbreaks=seq(0.1,0.7,by=0.1),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="D")
-ggsave(filename="FigureS7.eps",
-       plot=g.s7.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
-         g.s7.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
-         g.s7.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
-         g.s7.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+ggsave(filename="FigureD2.eps",
+       plot=g.d2.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d2.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d2.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d2.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
          plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
        device="eps", width=7, height=7, units="in")
 
@@ -805,7 +968,7 @@ Plot.Res4.gg(resdf1=df2.RhoArm0, resdf2=df2.RhoArm1,
              xtitle1=bquote("Ratio of"~rho["01"]~"to"~rho["00"]), 
              xtitle2=bquote("Ratio of"~rho["11"]~"to"~rho["10"]),
              xvar1="rho.ratio", xvar2="rho.ratio",
-             fileout="FigureS3.eps",
+             fileout="FigureC3.eps",
              xbreaks1=log(c(1/4,1/2,3/4,1,3/2,2,3,4)), 
              xbreaks2=log(c(1/4,1/2,3/4,1,3/2,2,3,4)),
              xlabels1=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"), 
@@ -875,7 +1038,7 @@ Plot.Res4.gg(resdf1=df2.PiArm0, resdf2=df2.PiArm1,
              xtitle1=bquote("Ratio of"~pi["01"]~"to"~pi["00"]), 
              xtitle2=bquote("Ratio of"~pi["11"]~"to"~pi["10"]),
              xvar1="pi.ratio", xvar2="pi.ratio",
-             fileout="FigureS4.eps",
+             fileout="FigureC4.eps",
              xbreaks1=log(c(1/4,1/2,3/4,1,3/2,2,3,4)), 
              xbreaks2=log(c(1/4,1/2,3/4,1,3/2,2,3,4)),
              xlabels1=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"), 
@@ -946,7 +1109,7 @@ Plot.Res4.gg(resdf1=df2.VaryE0, resdf2=df2.VaryE1,
              xtitle1=bquote("Mean Cluster Size when"~Z["2i"]==0), 
              xtitle2=bquote("Mean Cluster Size when"~Z["2i"]==1),
              xvar1="truemeans", xvar2="truemeans",
-             fileout="FigureS5.eps",
+             fileout="FigureC5.eps",
              xbreaks1=seq(5,20,by=5), 
              xbreaks2=seq(5,20,by=5), 
              xlabels1=NULL, 
@@ -1013,7 +1176,7 @@ Plot.Res4.gg(resdf1=df2.VaryE0CV, resdf2=df2.VaryE1CV,
              xtitle1=bquote("CV of Cluster Sizes when"~Z["2i"]==0),
              xtitle2=bquote("CV of Cluster Sizes when"~Z["2i"]==1),
              xvar1="trueCVs", xvar2="trueCVs",
-             fileout="FigureS6.eps",
+             fileout="FigureC6.eps",
              xbreaks1=seq(0.1,0.7,by=0.1), 
              xbreaks2=seq(0.1,0.7,by=0.1),
              xlabels1=NULL, 
@@ -1022,9 +1185,57 @@ Plot.Res4.gg(resdf1=df2.VaryE0CV, resdf2=df2.VaryE1CV,
              truth1=cv, truth2=cv,
              truecol="red", truelty=2, linesize=1)
 
-### Sample Size Plotting for Differentially Varying ###
+### Power and Sample Size Plotting for Differentially Varying ###
 ### Rho and Pi Ratios Between Treatment Arms ###
-g.s8.a <- Plot.SS.single(resdf=df2.RhoArm0,
+g.c8.a <- Plot.Pwr.single(resdf=df2.RhoArm0,
+                         xlab=bquote(rho["01"]/rho["00"]),
+                         xvar="rho.ratio",
+                         title=bquote("Ratio of"~rho["01"]~"to"~rho["00"]),
+                         truth=log(icc.ctrl.E1/icc.ctrl.E0),
+                         ylimit=c(60,100),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="A")
+g.c8.b <- Plot.Pwr.single(resdf=df2.RhoArm1,
+                         xlab=bquote(rho["11"]/rho["10"]),
+                         xvar="rho.ratio",
+                         title=bquote("Ratio of"~rho["11"]~"to"~rho["10"]),
+                         truth=log(icc.trt.E1/icc.trt.E0),
+                         ylimit=c(60,100),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="B")
+g.c8.c <- Plot.Pwr.single(resdf=df2.PiArm0,
+                         xlab=bquote(pi["01"]/pi["00"]),
+                         xvar="pi.ratio",
+                         title=bquote("Ratio of"~pi["01"]~"to"~pi["00"]),
+                         truth=log(pi.ctrl.E1/pi.ctrl.E0),
+                         ylimit=c(60,100),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="C")
+g.c8.d <- Plot.Pwr.single(resdf=df2.PiArm1,
+                         xlab=bquote(pi["11"]/pi["10"]),
+                         xvar="pi.ratio",
+                         title=bquote("Ratio of"~pi["11"]~"to"~pi["10"]),
+                         truth=log(pi.trt.E1/pi.trt.E0),
+                         ylimit=c(60,100),
+                         xbreaks=log(c(0.25,0.5,0.75,1.0,1.5,2,3,4)),
+                         xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="D")
+ggsave(filename="FigureC8.eps",
+       plot=g.c8.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.c8.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.c8.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.c8.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
+       device="eps", width=7, height=7, units="in")
+
+g.d3.a <- Plot.SS.single(resdf=df2.RhoArm0,
                          xlab=bquote(rho["01"]/rho["00"]),
                          xvar="rho.ratio",
                          title=bquote("Ratio of"~rho["01"]~"to"~rho["00"]),
@@ -1034,7 +1245,7 @@ g.s8.a <- Plot.SS.single(resdf=df2.RhoArm0,
                          xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="A")
-g.s8.b <- Plot.SS.single(resdf=df2.RhoArm1,
+g.d3.b <- Plot.SS.single(resdf=df2.RhoArm1,
                          xlab=bquote(rho["11"]/rho["10"]),
                          xvar="rho.ratio",
                          title=bquote("Ratio of"~rho["11"]~"to"~rho["10"]),
@@ -1044,7 +1255,7 @@ g.s8.b <- Plot.SS.single(resdf=df2.RhoArm1,
                          xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="B")
-g.s8.c <- Plot.SS.single(resdf=df2.PiArm0,
+g.d3.c <- Plot.SS.single(resdf=df2.PiArm0,
                          xlab=bquote(pi["01"]/pi["00"]),
                          xvar="pi.ratio",
                          title=bquote("Ratio of"~pi["01"]~"to"~pi["00"]),
@@ -1054,7 +1265,7 @@ g.s8.c <- Plot.SS.single(resdf=df2.PiArm0,
                          xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="C")
-g.s8.d <- Plot.SS.single(resdf=df2.PiArm1,
+g.d3.d <- Plot.SS.single(resdf=df2.PiArm1,
                          xlab=bquote(pi["11"]/pi["10"]),
                          xvar="pi.ratio",
                          title=bquote("Ratio of"~pi["11"]~"to"~pi["10"]),
@@ -1064,18 +1275,62 @@ g.s8.d <- Plot.SS.single(resdf=df2.PiArm1,
                          xlabels=c("0.25","0.5","0.75","1.0","1.5","2.0","3.0","4.0"),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="D")
-ggsave(filename="FigureS8.eps",
-       plot=g.s8.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
-         g.s8.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
-         g.s8.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
-         g.s8.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+ggsave(filename="FigureD3.eps",
+       plot=g.d3.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d3.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d3.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d3.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
          plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
        device="eps", width=7, height=7, units="in")
 
 
-### Sample Size Plotting for Differentially Varying ###
+### Power and Sample Size Plotting for Differentially Varying ###
 ### Cluster Size Distribution Between High- and Low-Electrification Clusters ###
-g.s9.a <- Plot.SS.single(resdf=df2.VaryE0,
+g.c9.a <- Plot.Pwr.single(resdf=df2.VaryE0,
+                         xlab=bquote("Mean Cluster Size when"~Z["2i"]==0),
+                         xvar="truemeans",
+                         title=bquote("Mean Cluster Size when"~Z["2i"]==0),
+                         truth=mean(ClustSizes),
+                         ylimit=c(60,100),
+                         xbreaks=seq(5,20,by=5),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="A")
+g.c9.b <- Plot.Pwr.single(resdf=df2.VaryE1,
+                         xlab=bquote("Mean Cluster Size when"~Z["2i"]==1),
+                         xvar="truemeans",
+                         title=bquote("Mean Cluster Size when"~Z["2i"]==1),
+                         truth=mean(ClustSizes),
+                         ylimit=c(60,100),
+                         xbreaks=seq(5,20,by=5),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="B")
+g.c9.c <- Plot.Pwr.single(resdf=df2.VaryE0CV,
+                         xlab=bquote("CV of Cluster Sizes when"~Z["2i"]==0),
+                         xvar="trueCVs",
+                         title=bquote("CV of Cluster Sizes when"~Z["2i"]==0),
+                         truth=sqrt(var)/(muAdj+1),
+                         ylimit=c(60,100),
+                         xbreaks=seq(0.1,0.7,by=0.1),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="C")
+g.c9.d <- Plot.Pwr.single(resdf=df2.VaryE1CV,
+                         xlab=bquote("CV of Cluster Sizes when"~Z["2i"]==1),
+                         xvar="trueCVs",
+                         title=bquote("CV of Cluster Sizes when"~Z["2i"]==1),
+                         truth=sqrt(var)/(muAdj+1),
+                         ylimit=c(60,100),
+                         xbreaks=seq(0.1,0.7,by=0.1),
+                         truecol="red", truelty=2, linesize=1.5) +
+  labs(tag="D")
+ggsave(filename="FigureC9.eps",
+       plot=g.c9.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.c9.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.c9.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.c9.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
+       device="eps", width=7, height=7, units="in")
+
+g.d4.a <- Plot.SS.single(resdf=df2.VaryE0,
                          xlab=bquote("Mean Cluster Size when"~Z["2i"]==0),
                          xvar="truemeans",
                          title=bquote("Mean Cluster Size when"~Z["2i"]==0),
@@ -1084,7 +1339,7 @@ g.s9.a <- Plot.SS.single(resdf=df2.VaryE0,
                          xbreaks=seq(5,20,by=5),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="A")
-g.s9.b <- Plot.SS.single(resdf=df2.VaryE1,
+g.d4.b <- Plot.SS.single(resdf=df2.VaryE1,
                          xlab=bquote("Mean Cluster Size when"~Z["2i"]==1),
                          xvar="truemeans",
                          title=bquote("Mean Cluster Size when"~Z["2i"]==1),
@@ -1093,7 +1348,7 @@ g.s9.b <- Plot.SS.single(resdf=df2.VaryE1,
                          xbreaks=seq(5,20,by=5),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="B")
-g.s9.c <- Plot.SS.single(resdf=df2.VaryE0CV,
+g.d4.c <- Plot.SS.single(resdf=df2.VaryE0CV,
                          xlab=bquote("CV of Cluster Sizes when"~Z["2i"]==0),
                          xvar="trueCVs",
                          title=bquote("CV of Cluster Sizes when"~Z["2i"]==0),
@@ -1102,7 +1357,7 @@ g.s9.c <- Plot.SS.single(resdf=df2.VaryE0CV,
                          xbreaks=seq(0.1,0.7,by=0.1),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="C")
-g.s9.d <- Plot.SS.single(resdf=df2.VaryE1CV,
+g.d4.d <- Plot.SS.single(resdf=df2.VaryE1CV,
                          xlab=bquote("CV of Cluster Sizes when"~Z["2i"]==1),
                          xvar="trueCVs",
                          title=bquote("CV of Cluster Sizes when"~Z["2i"]==1),
@@ -1111,11 +1366,11 @@ g.s9.d <- Plot.SS.single(resdf=df2.VaryE1CV,
                          xbreaks=seq(0.1,0.7,by=0.1),
                          truecol="red", truelty=2, linesize=1.5) +
   labs(tag="D")
-ggsave(filename="FigureS9.eps",
-       plot=g.s9.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
-         g.s9.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
-         g.s9.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
-         g.s9.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+ggsave(filename="FigureD4.eps",
+       plot=g.d4.a+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d4.b+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d4.c+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
+         g.d4.d+guides(color=guide_legend(nrow=2,byrow=TRUE,override.aes=list(size=1)))+theme(legend.position="bottom")+
          plot_layout(ncol=2,nrow=2,byrow=TRUE, guides="collect") & theme(legend.position = "bottom"),
        device="eps", width=7, height=7, units="in")
 

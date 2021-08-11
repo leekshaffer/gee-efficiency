@@ -47,7 +47,7 @@ Vars <- function(n0vec,n1vec,rho0,rho1,pi0,pi1,
 
 SSest <- function(n0vec,n1vec,rho0,rho1,pi0,pi1,
                   n0wts=NULL,n1wts=NULL,
-                  sig=0.05,pwr=.8) {
+                  sig=0.05, pwr=.8) {
   if (is.null(n0wts) + is.null(n1wts) == 1) {
     print("Error: Specify Weights for both n0 and n1 or Neither")
   } else if (is.null(n0wts) & is.null(n1wts)) {
@@ -61,31 +61,37 @@ SSest <- function(n0vec,n1vec,rho0,rho1,pi0,pi1,
   NullVars <- unlist(Vars(n0vec,n1vec,rhost,rhost,
                           pi0,pi0,n0wts,n1wts,K.tot=1)[c("Cor","Ind","Exch")])
   AltHyp <- log((pi1/(1-pi1))/(pi0/(1-pi0)))
-  K.req <- 1/(AltHyp^2)*(qnorm(1-sig/2)*sqrt(NullVars)+qnorm(pwr)*sqrt(AltVars))^2
   
   AltVars.rho0 <- unlist(Vars(n0vec,n1vec,rho0,rho0,pi0,pi1,
                               n0wts,n1wts,K.tot=1)[c("Cor","Ind","Exch")])
   NullVars.rho0 <- unlist(Vars(n0vec,n1vec,rho0,rho0,
                                pi0,pi0,n0wts,n1wts,K.tot=1)[c("Cor","Ind","Exch")])
-  K.est.rho0 <- 1/(AltHyp^2)*(qnorm(1-sig/2)*sqrt(NullVars.rho0)+qnorm(pwr)*sqrt(AltVars.rho0))^2
   
   AltVars.rho1 <- unlist(Vars(n0vec,n1vec,rho1,rho1,pi0,pi1,
                               n0wts,n1wts,K.tot=1)[c("Cor","Ind","Exch")])
   NullVars.rho1 <- unlist(Vars(n0vec,n1vec,rho1,rho1,
                                pi0,pi0,n0wts,n1wts,K.tot=1)[c("Cor","Ind","Exch")])
-  K.est.rho1 <- 1/(AltHyp^2)*(qnorm(1-sig/2)*sqrt(NullVars.rho1)+qnorm(pwr)*sqrt(AltVars.rho1))^2
   
   AltVars.rhost <- unlist(Vars(n0vec,n1vec,rhost,rhost,pi0,pi1,
-                              n0wts,n1wts,K.tot=1)[c("Cor","Ind","Exch")])
+                               n0wts,n1wts,K.tot=1)[c("Cor","Ind","Exch")])
   NullVars.rhost <- unlist(Vars(n0vec,n1vec,rhost,rhost,
-                               pi0,pi0,n0wts,n1wts,K.tot=1)[c("Cor","Ind","Exch")])
+                                pi0,pi0,n0wts,n1wts,K.tot=1)[c("Cor","Ind","Exch")])
+  
+  K.req <- 1/(AltHyp^2)*(qnorm(1-sig/2)*sqrt(NullVars)+qnorm(pwr)*sqrt(AltVars))^2
+  K.est.rho0 <- 1/(AltHyp^2)*(qnorm(1-sig/2)*sqrt(NullVars.rho0)+qnorm(pwr)*sqrt(AltVars.rho0))^2
+  K.est.rho1 <- 1/(AltHyp^2)*(qnorm(1-sig/2)*sqrt(NullVars.rho1)+qnorm(pwr)*sqrt(AltVars.rho1))^2
   K.est.rhost <- 1/(AltHyp^2)*(qnorm(1-sig/2)*sqrt(NullVars.rhost)+qnorm(pwr)*sqrt(AltVars.rhost))^2
   
   return(list(SSratio.cor=K.req["Cor"]/K.req["Cor"],
               SSratio.ind=K.est.rhost["Ind"]/K.req["Ind"],
               SSratio.exch.rhost=K.est.rhost["Exch"]/K.req["Exch"],
               SSratio.exch.rho0=K.est.rho0["Exch"]/K.req["Exch"],
-              SSratio.exch.rho1=K.est.rho1["Exch"]/K.req["Exch"]))
+              SSratio.exch.rho1=K.est.rho1["Exch"]/K.req["Exch"],
+              pwr.cor=pnorm((abs(AltHyp)*sqrt(K.req["Cor"])-qnorm(1-sig/2)*sqrt(NullVars["Cor"]))/sqrt(AltVars["Cor"])),
+              pwr.ind=pnorm((abs(AltHyp)*sqrt(K.est.rhost["Ind"])-qnorm(1-sig/2)*sqrt(NullVars["Ind"]))/sqrt(AltVars["Ind"])),
+              pwr.exch.rhost=pnorm((abs(AltHyp)*sqrt(K.est.rhost["Exch"])-qnorm(1-sig/2)*sqrt(NullVars["Exch"]))/sqrt(AltVars["Exch"])),
+              pwr.exch.rho0=pnorm((abs(AltHyp)*sqrt(K.est.rho0["Exch"])-qnorm(1-sig/2)*sqrt(NullVars["Exch"]))/sqrt(AltVars["Exch"])),
+              pwr.exch.rho1=pnorm((abs(AltHyp)*sqrt(K.est.rho1["Exch"])-qnorm(1-sig/2)*sqrt(NullVars["Exch"]))/sqrt(AltVars["Exch"]))))
 }
 
 ##### Two Binary Cluster-Level Covariates #####
@@ -163,7 +169,7 @@ SSest2 <- function(n00vec, n10vec, n01vec, n11vec,
                    pi00, pi10, pi01, pi11,
                    rho00, rho10, rho01, rho11,
                    n00wts=NULL, n10wts=NULL, n01wts=NULL, n11wts=NULL,
-                   sig=0.05,pwr=0.80) {
+                   sig=0.05, pwr=0.80, K=NULL) {
   if (is.null(n00wts) + is.null(n10wts) + is.null(n01wts) + is.null(n11wts) < 4 & is.null(n00wts) + is.null(n01wts) + is.null(n10wts) + is.null(n11wts) > 0) {
     print("Error: Specify Weights for All Cluster Size Vectors or None")
   } else if (is.null(n00wts)) {
@@ -216,5 +222,10 @@ SSest2 <- function(n00vec, n10vec, n01vec, n11vec,
               SSratio.ind=K.est.rhost["Ind"]/K.req["Ind"],
               SSratio.exch.rhost=K.est.rhost["Exch"]/K.req["Exch"],
               SSratio.exch.rho0=K.est.rho0["Exch"]/K.req["Exch"],
-              SSratio.exch.rho1=K.est.rho1["Exch"]/K.req["Exch"]))
+              SSratio.exch.rho1=K.est.rho1["Exch"]/K.req["Exch"],
+              pwr.cor=pnorm((abs(AltHyp)*sqrt(K.req["Cor"])-qnorm(1-sig/2)*sqrt(NullVars["Cor"]))/sqrt(AltVars["Cor"])),
+              pwr.ind=pnorm((abs(AltHyp)*sqrt(K.est.rhost["Ind"])-qnorm(1-sig/2)*sqrt(NullVars["Ind"]))/sqrt(AltVars["Ind"])),
+              pwr.exch.rhost=pnorm((abs(AltHyp)*sqrt(K.est.rhost["Exch"])-qnorm(1-sig/2)*sqrt(NullVars["Exch"]))/sqrt(AltVars["Exch"])),
+              pwr.exch.rho0=pnorm((abs(AltHyp)*sqrt(K.est.rho0["Exch"])-qnorm(1-sig/2)*sqrt(NullVars["Exch"]))/sqrt(AltVars["Exch"])),
+              pwr.exch.rho1=pnorm((abs(AltHyp)*sqrt(K.est.rho1["Exch"])-qnorm(1-sig/2)*sqrt(NullVars["Exch"]))/sqrt(AltVars["Exch"]))))
 }
